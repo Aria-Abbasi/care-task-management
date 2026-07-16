@@ -25,6 +25,7 @@ class ShiftReportSerializer(serializers.ModelSerializer):
             "shift_ended_at",
             "observations",
             "concerns",
+            "client_reference",
             "status",
             "sent_at",
             "created_at",
@@ -48,3 +49,8 @@ class ShiftReportSerializer(serializers.ModelSerializer):
         if status == ShiftReport.Status.SENT and instance.status != ShiftReport.Status.SENT:
             validated_data["sent_at"] = timezone.now()
         return super().update(instance, validated_data)
+
+    def create(self, validated_data):
+        if validated_data.get("status") == ShiftReport.Status.SENT:
+            validated_data["sent_at"] = timezone.now()
+        return super().create(validated_data)

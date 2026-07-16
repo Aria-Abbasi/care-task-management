@@ -28,6 +28,7 @@ class Task(TimeStampedModel):
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_tasks"
     )
+    client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline creation")
     active = models.BooleanField(default=True)
 
     def __str__(self):

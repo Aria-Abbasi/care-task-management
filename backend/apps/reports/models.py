@@ -19,6 +19,7 @@ class ShiftReport(TimeStampedModel):
     shift_ended_at = models.DateTimeField()
     observations = models.TextField(blank=True)
     concerns = models.TextField(blank=True)
+    client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline creation")
     status = models.CharField(max_length=8, choices=Status.choices, default=Status.DRAFT)
     sent_at = models.DateTimeField(null=True, blank=True)
 

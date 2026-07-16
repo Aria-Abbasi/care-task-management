@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
 from django.utils import timezone
@@ -8,6 +8,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User
 from apps.health.models import VitalRecord
 from apps.patients.models import CareAssignment, Patient
+from apps.reports.models import ShiftReport
 
 from .models import CompletionLog, Task, TaskOccurrence, TaskSchedule
 from .services import generate_occurrences_for_date
@@ -107,6 +108,25 @@ class CareApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("assigned_to", response.data)
 
+    def test_task_creation_generates_today_occurrence_and_prevents_replay_duplicates(self):
+        self.authenticate()
+        client_reference = uuid4()
+        payload = {
+            "client_reference": str(client_reference),
+            "patient": self.patient.id,
+            "title": "Evening hydration",
+            "category": Task.Category.HEALTH,
+            "schedules": [{"frequency": TaskSchedule.Frequency.DAILY, "time": "18:00:00"}],
+        }
+        first = self.client.post("/api/v1/tasks/", payload, format="json")
+        replay = self.client.post("/api/v1/tasks/", payload, format="json")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(replay.status_code, status.HTTP_200_OK)
+        created_task = Task.objects.get(client_reference=client_reference)
+        self.assertTrue(created_task.occurrences.filter(scheduled_at__date=self.today).exists())
+        self.assertEqual(Task.objects.filter(client_reference=client_reference).count(), 1)
+
     def test_dashboard_aggregates_daily_care(self):
         VitalRecord.objects.create(
             patient=self.patient,
@@ -159,6 +179,43 @@ class CareApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("secondary_value", response.data)
+
+    def test_vital_creation_is_idempotent_for_offline_replay(self):
+        self.authenticate()
+        client_reference = uuid4()
+        payload = {
+            "client_reference": str(client_reference),
+            "patient": self.patient.id,
+            "type": VitalRecord.Type.OXYGEN,
+            "value": "97",
+            "unit": "%",
+            "recorded_at": timezone.now().isoformat(),
+        }
+        first = self.client.post("/api/v1/vitals/", payload, format="json")
+        replay = self.client.post("/api/v1/vitals/", payload, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(replay.status_code, status.HTTP_200_OK)
+        self.assertEqual(VitalRecord.objects.filter(client_reference=client_reference).count(), 1)
+
+    def test_shift_report_replay_does_not_duplicate_handover(self):
+        self.authenticate()
+        client_reference = uuid4()
+        ended_at = timezone.now()
+        payload = {
+            "client_reference": str(client_reference),
+            "patient": self.patient.id,
+            "shift_started_at": (ended_at - timedelta(hours=8)).isoformat(),
+            "shift_ended_at": ended_at.isoformat(),
+            "observations": "Stable shift.",
+            "status": ShiftReport.Status.SENT,
+        }
+        first = self.client.post("/api/v1/shift-reports/", payload, format="json")
+        replay = self.client.post("/api/v1/shift-reports/", payload, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(replay.status_code, status.HTTP_200_OK)
+        report = ShiftReport.objects.get(client_reference=client_reference)
+        self.assertIsNotNone(report.sent_at)
+        self.assertEqual(ShiftReport.objects.filter(client_reference=client_reference).count(), 1)
 
     def test_occurrence_generation_is_idempotent(self):
         self.occurrence.delete()

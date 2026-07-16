@@ -57,6 +57,8 @@ Authorization: Token <token>
 
 All patient-owned querysets are restricted to explicit active care assignments. Administrators can access every active patient.
 
+Task templates, task completions, vital readings, and shift reports accept a unique `client_reference`. Replaying the same offline mutation returns the existing record instead of duplicating clinical data.
+
 ## Background work
 
 Celery Beat invokes `maintain_task_occurrences` every minute. The task idempotently creates calendar occurrences and marks stale pending occurrences as missed.

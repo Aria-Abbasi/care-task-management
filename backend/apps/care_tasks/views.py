@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -12,6 +13,7 @@ from .serializers import (
     TaskOccurrenceSerializer,
     TaskSerializer,
 )
+from .services import generate_occurrences_for_date
 
 
 class PatientAccessMixin:
@@ -36,9 +38,18 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
             .prefetch_related("schedules")
         )
 
+    def create(self, request, *args, **kwargs):
+        client_reference = request.data.get("client_reference")
+        if client_reference:
+            existing = self.get_queryset().filter(client_reference=client_reference).first()
+            if existing:
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         self.validate_patient_access(serializer.validated_data["patient"])
         serializer.save()
+        generate_occurrences_for_date(timezone.localdate())
 
     def perform_update(self, serializer):
         self.validate_patient_access(serializer.validated_data.get("patient", serializer.instance.patient))

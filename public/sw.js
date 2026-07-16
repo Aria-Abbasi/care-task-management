@@ -1,4 +1,4 @@
-const CACHE = 'haven-shell-v1'
+const CACHE = 'haven-shell-v2'
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
@@ -15,6 +15,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
+  const url = new URL(event.request.url)
+  const isPrivateRequest = url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || event.request.headers.has('Authorization')
+  if (isPrivateRequest) return
   event.respondWith(
     fetch(event.request)
       .then((response) => {

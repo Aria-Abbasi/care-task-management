@@ -48,6 +48,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "instructions",
             "assigned_to",
             "assigned_to_name",
+            "client_reference",
             "active",
             "schedules",
             "created_at",
