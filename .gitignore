@@ -29,10 +29,10 @@ node_modules/
 dist/
 build/
 .next/
+*.tsbuildinfo
 
 # Editors and operating systems
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
-
