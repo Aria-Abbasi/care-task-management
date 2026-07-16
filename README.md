@@ -15,7 +15,7 @@ Haven is a responsive care-management PWA designed for busy caregivers. Its inte
 - Notification, privacy, and profile settings
 - Responsive mobile navigation and offline shell caching
 
-The current data is intentionally local demo data. The interface is structured so that a Django REST API can replace it in the next implementation phase.
+The interface currently uses local demo data. A production-oriented Django REST backend is available in [`backend/`](backend/) and is ready for frontend API integration.
 
 ## Run locally
 
@@ -39,7 +39,9 @@ The optimized build is written to `dist/`.
 
 ## Planned production services
 
-- Django REST API with PostgreSQL
-- Celery and Celery Beat for occurrences, reminders, and overdue alerts
-- Role-based access for administrators, caregivers, doctors, and family members
+- Django REST API with SQLite locally and PostgreSQL in production
+- Celery and Celery Beat for occurrences and overdue processing
+- Role-based users with explicit patient care assignments
 - IndexedDB mutation queue and authenticated sync API
+
+See [`backend/README.md`](backend/README.md) for API setup, endpoints, demo data, and container instructions.
