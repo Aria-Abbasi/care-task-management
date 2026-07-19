@@ -22,6 +22,9 @@ class VitalRecordSerializer(serializers.ModelSerializer):
             "recorded_by_name",
             "note",
             "client_reference",
+            "source_system",
+            "external_id",
+            "provenance",
             "created_at",
         ]
         read_only_fields = ["id", "recorded_by", "created_at"]

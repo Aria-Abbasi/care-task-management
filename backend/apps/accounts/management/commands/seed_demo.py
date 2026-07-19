@@ -4,17 +4,23 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.accounts.models import User
+from apps.accounts.models import Organization, User
 from apps.care_tasks.models import Task, TaskOccurrence, TaskSchedule
+from apps.clinical.models import Allergy, CarePlan, Diagnosis, EmergencyContact
+from apps.communications.models import CaregiverAvailability, Conversation, Message, ShiftAssignment
 from apps.health.models import VitalRecord
 from apps.medications.models import Medication, MedicationSchedule
 from apps.patients.models import CareAssignment, Patient
+from apps.safety.models import EscalationPolicy, EscalationStep
 
 
 class Command(BaseCommand):
     help = "Create an idempotent local demo workspace"
 
     def handle(self, *args, **options):
+        organization, _ = Organization.objects.get_or_create(
+            slug="haven-demo", defaults={"name": "Haven Demo Care", "country_code": "IR", "timezone": "Asia/Tehran"}
+        )
         caregiver, created = User.objects.get_or_create(
             username="sarah",
             defaults={
@@ -22,11 +28,54 @@ class Command(BaseCommand):
                 "first_name": "Sarah",
                 "last_name": "James",
                 "role": User.Role.CAREGIVER,
+                "organization": organization,
             },
         )
         if created:
             caregiver.set_password("caregiver")
             caregiver.save(update_fields=["password"])
+        elif caregiver.organization_id != organization.id:
+            caregiver.organization = organization
+            caregiver.save(update_fields=["organization"])
+
+        doctor, doctor_created = User.objects.get_or_create(
+            username="doctor",
+            defaults={
+                "email": "doctor@havencare.com",
+                "first_name": "Nima",
+                "last_name": "Rahimi",
+                "role": User.Role.DOCTOR,
+                "organization": organization,
+            },
+        )
+        family, family_created = User.objects.get_or_create(
+            username="layla",
+            defaults={
+                "email": "layla@havencare.com",
+                "first_name": "Layla",
+                "last_name": "Abbasi",
+                "role": User.Role.FAMILY,
+                "organization": organization,
+            },
+        )
+        admin, admin_created = User.objects.get_or_create(
+            username="admin",
+            defaults={
+                "email": "admin@havencare.com",
+                "first_name": "Ava",
+                "last_name": "Admin",
+                "role": User.Role.ADMIN,
+                "organization": organization,
+            },
+        )
+        for user, was_created, password in [
+            (doctor, doctor_created, "clinician-demo"),
+            (family, family_created, "family-demo"),
+            (admin, admin_created, "admin-demo"),
+        ]:
+            if was_created:
+                user.set_password(password)
+                user.save(update_fields=["password"])
 
         patient, _ = Patient.objects.get_or_create(
             first_name="Hassan",
@@ -36,6 +85,7 @@ class Command(BaseCommand):
                 "gender": Patient.Gender.MALE,
                 "room": "204",
                 "medical_notes": "Low-sodium diet. Monitor blood pressure twice daily.",
+                "organization": organization,
             },
         )
         CareAssignment.objects.get_or_create(
@@ -43,6 +93,84 @@ class Command(BaseCommand):
             patient=patient,
             defaults={"relationship": CareAssignment.Relationship.PRIMARY_CAREGIVER},
         )
+        CareAssignment.objects.get_or_create(user=doctor, patient=patient, defaults={"relationship": CareAssignment.Relationship.DOCTOR})
+        CareAssignment.objects.get_or_create(user=family, patient=patient, defaults={"relationship": CareAssignment.Relationship.FAMILY})
+        CareAssignment.objects.get_or_create(
+            user=admin, patient=patient, defaults={"relationship": CareAssignment.Relationship.ADMINISTRATOR}
+        )
+
+        second_patient, _ = Patient.objects.get_or_create(
+            first_name="Maryam",
+            last_name="Abbasi",
+            defaults={
+                "birth_date": date(1948, 6, 4),
+                "gender": Patient.Gender.FEMALE,
+                "room": "205",
+                "medical_notes": "Uses a walking aid. Encourage hydration throughout the day.",
+                "organization": organization,
+            },
+        )
+        CareAssignment.objects.get_or_create(
+            user=caregiver,
+            patient=second_patient,
+            defaults={"relationship": CareAssignment.Relationship.CAREGIVER},
+        )
+        CareAssignment.objects.get_or_create(
+            user=admin, patient=second_patient, defaults={"relationship": CareAssignment.Relationship.ADMINISTRATOR}
+        )
+
+        Allergy.objects.get_or_create(
+            patient=patient,
+            substance="Penicillin",
+            defaults={"reaction": "Hives", "severity": Allergy.Severity.SEVERE, "recorded_by": doctor},
+        )
+        Diagnosis.objects.get_or_create(
+            patient=patient,
+            display="Hypertension",
+            defaults={"code": "38341003", "code_system": "http://snomed.info/sct", "recorded_by": doctor},
+        )
+        CarePlan.objects.get_or_create(
+            patient=patient,
+            title="Daily independence plan",
+            defaults={
+                "status": CarePlan.Status.ACTIVE,
+                "goals": ["Maintain safe mobility", "Keep blood pressure observations current"],
+                "instructions": "Support independent choices and document changes.",
+                "author": doctor,
+            },
+        )
+        EmergencyContact.objects.get_or_create(
+            patient=patient,
+            name="Layla Abbasi",
+            defaults={"relationship": "Daughter", "phone": "+98 912 000 0000", "email": family.email, "authorized_for_updates": True},
+        )
+
+        conversation, _ = Conversation.objects.get_or_create(
+            patient=patient, title="Hassan care circle", kind=Conversation.Kind.FAMILY, defaults={"created_by": caregiver}
+        )
+        conversation.participants.add(caregiver, family, doctor)
+        Message.objects.get_or_create(conversation=conversation, sender=family, body="How did Dad sleep last night?")
+        starts = timezone.now().replace(hour=15, minute=0, second=0, microsecond=0)
+        if starts < timezone.now():
+            starts += timedelta(days=1)
+        ShiftAssignment.objects.get_or_create(
+            patient=patient,
+            caregiver=caregiver,
+            starts_at=starts,
+            defaults={"ends_at": starts + timedelta(hours=8), "notes": "Review morning observations at handover."},
+        )
+
+        policy, _ = EscalationPolicy.objects.get_or_create(
+            organization=organization, name="Critical medication escalation", defaults={"is_default": True}
+        )
+        for level, delay, channel, roles in [
+            (1, 0, "PUSH", ["CAREGIVER"]),
+            (2, 10, "SMS", ["CAREGIVER", "ADMIN"]),
+            (3, 20, "VOICE", ["ADMIN"]),
+        ]:
+            EscalationStep.objects.get_or_create(
+                policy=policy, level=level, channel=channel, defaults={"delay_minutes": delay, "recipient_roles": roles}
+            )
 
         local_date = timezone.localdate()
         task_specs = [
@@ -68,6 +196,27 @@ class Command(BaseCommand):
             )
             scheduled_at = timezone.make_aware(datetime.combine(local_date, scheduled_time), timezone.get_current_timezone())
             TaskOccurrence.objects.get_or_create(task=task, scheduled_at=scheduled_at, defaults={"schedule": schedule})
+
+        hydration, _ = Task.objects.get_or_create(
+            patient=second_patient,
+            title="Hydration check",
+            defaults={
+                "category": Task.Category.HEALTH,
+                "instructions": "Offer water and record any difficulty drinking.",
+                "assigned_to": caregiver,
+            },
+        )
+        CaregiverAvailability.objects.get_or_create(
+            caregiver=caregiver,
+            starts_at=starts,
+            ends_at=starts + timedelta(hours=8),
+            defaults={"available": True, "note": "Available for scheduled care."},
+        )
+        hydration_schedule, _ = TaskSchedule.objects.get_or_create(
+            task=hydration, time=time(11, 0), defaults={"frequency": TaskSchedule.Frequency.DAILY}
+        )
+        hydration_at = timezone.make_aware(datetime.combine(local_date, time(11, 0)), timezone.get_current_timezone())
+        TaskOccurrence.objects.get_or_create(task=hydration, scheduled_at=hydration_at, defaults={"schedule": hydration_schedule})
 
         medications = [
             ("Amlodipine", Decimal("5"), "mg", [time(8), time(20)], "Give after food."),
@@ -105,4 +254,6 @@ class Command(BaseCommand):
                 },
             )
 
-        self.stdout.write(self.style.SUCCESS("Demo workspace ready: sarah / caregiver"))
+        self.stdout.write(
+            self.style.SUCCESS("Demo workspace ready: sarah/caregiver · doctor/clinician-demo · layla/family-demo · admin/admin-demo")
+        )

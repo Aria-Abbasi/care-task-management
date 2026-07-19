@@ -22,6 +22,10 @@ class ShiftReport(TimeStampedModel):
     client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline creation")
     status = models.CharField(max_length=8, choices=Status.choices, default=Status.DRAFT)
     sent_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="acknowledged_shift_reports"
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-shift_ended_at"]

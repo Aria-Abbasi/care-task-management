@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+from apps.accounts.models import Organization
 from apps.common.models import TimeStampedModel
 
 
@@ -19,6 +20,7 @@ class Patient(TimeStampedModel):
     medical_notes = models.TextField(blank=True)
     photo = models.ImageField(upload_to="patients/", blank=True)
     active = models.BooleanField(default=True)
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, null=True, blank=True, related_name="patients")
 
     @property
     def full_name(self):

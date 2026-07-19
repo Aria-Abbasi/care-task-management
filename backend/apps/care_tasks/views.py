@@ -1,14 +1,19 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.models import User
+from apps.common.exceptions import VersionConflict
 from apps.patients.access import patients_for_user
+from apps.safety.services import record_audit
 
 from .models import Task, TaskOccurrence
 from .serializers import (
     CompleteOccurrenceSerializer,
+    CorrectOccurrenceSerializer,
     DelayOccurrenceSerializer,
     TaskOccurrenceSerializer,
     TaskSerializer,
@@ -23,6 +28,10 @@ class PatientAccessMixin:
     def validate_patient_access(self, patient):
         if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
+
+    def require_care_role(self):
+        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+            raise PermissionDenied("Family accounts can review care but cannot record or change clinical care.")
 
 
 class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
@@ -47,17 +56,42 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
+        self.require_care_role()
         self.validate_patient_access(serializer.validated_data["patient"])
-        serializer.save()
+        task = serializer.save()
         generate_occurrences_for_date(timezone.localdate())
+        record_audit(
+            actor=self.request.user,
+            patient=task.patient,
+            action="TASK_CREATED",
+            instance=task,
+            summary=f"Created care task: {task.title}",
+            client_reference=task.client_reference,
+        )
 
     def perform_update(self, serializer):
+        self.require_care_role()
         self.validate_patient_access(serializer.validated_data.get("patient", serializer.instance.patient))
-        serializer.save()
+        task = serializer.save()
+        record_audit(
+            actor=self.request.user,
+            patient=task.patient,
+            action="TASK_UPDATED",
+            instance=task,
+            summary=f"Updated care task: {task.title}",
+        )
 
     def perform_destroy(self, instance):
+        self.require_care_role()
         instance.active = False
         instance.save(update_fields=["active", "updated_at"])
+        record_audit(
+            actor=self.request.user,
+            patient=instance.patient,
+            action="TASK_DEACTIVATED",
+            instance=instance,
+            summary=f"Deactivated care task: {instance.title}",
+        )
 
 
 class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
@@ -81,12 +115,14 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        self.require_care_role()
         task = serializer.validated_data["task"]
         self.validate_patient_access(task.patient)
         serializer.save()
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
+        self.require_care_role()
         occurrence = self.get_object()
         serializer = CompleteOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})
         serializer.is_valid(raise_exception=True)
@@ -95,20 +131,47 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def correct(self, request, pk=None):
+        self.require_care_role()
+        occurrence = self.get_object()
+        serializer = CorrectOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        occurrence.refresh_from_db()
+        return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
     def delay(self, request, pk=None):
+        self.require_care_role()
         occurrence = self.get_object()
         serializer = DelayOccurrenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        occurrence.delayed_until = serializer.validated_data["delayed_until"]
-        occurrence.status = TaskOccurrence.Status.DELAYED
-        occurrence.save(update_fields=["delayed_until", "status", "updated_at"])
+        with transaction.atomic():
+            occurrence = TaskOccurrence.objects.select_for_update().select_related("task", "task__patient").get(pk=occurrence.pk)
+            if serializer.validated_data["expected_version"] != occurrence.version:
+                raise VersionConflict(
+                    {"id": occurrence.id, "status": occurrence.status, "outcome": occurrence.outcome, "version": occurrence.version}
+                )
+            occurrence.delayed_until = serializer.validated_data["delayed_until"]
+            occurrence.status = TaskOccurrence.Status.DELAYED
+            occurrence.version += 1
+            occurrence.save(update_fields=["delayed_until", "status", "version", "updated_at"])
+            record_audit(
+                actor=request.user,
+                patient=occurrence.task.patient,
+                action="TASK_DELAYED",
+                instance=occurrence,
+                summary=f"Delayed {occurrence.task.title}",
+                metadata={"reason": serializer.validated_data["reason"], "delayed_until": occurrence.delayed_until.isoformat()},
+            )
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def skip(self, request, pk=None):
+        self.require_care_role()
         occurrence = self.get_object()
-        if occurrence.status == TaskOccurrence.Status.DONE:
-            return Response({"detail": "A completed task cannot be skipped."}, status=status.HTTP_409_CONFLICT)
-        occurrence.status = TaskOccurrence.Status.SKIPPED
-        occurrence.save(update_fields=["status", "updated_at"])
+        serializer = CompleteOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        occurrence.refresh_from_db()
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)

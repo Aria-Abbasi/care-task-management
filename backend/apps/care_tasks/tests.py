@@ -7,10 +7,13 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.health.models import VitalRecord
+from apps.medications.models import DoseLog, Medication
 from apps.patients.models import CareAssignment, Patient
 from apps.reports.models import ShiftReport
+from apps.safety.models import AuditEvent, CareNotification
+from apps.safety.services import scan_overdue_alerts
 
-from .models import CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
 from .services import generate_occurrences_for_date
 
 
@@ -147,7 +150,7 @@ class CareApiTests(APITestCase):
         self.authenticate()
         response = self.client.post(
             f"/api/v1/occurrences/{self.occurrence.id}/complete/",
-            {"note": "Reading recorded without issue."},
+            {"outcome": CompletionLog.Outcome.COMPLETED, "note": "Reading recorded without issue.", "expected_version": 1},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.occurrence.refresh_from_db()
@@ -159,8 +162,9 @@ class CareApiTests(APITestCase):
         self.authenticate()
         client_reference = uuid4()
         endpoint = f"/api/v1/occurrences/{self.occurrence.id}/complete/"
-        first = self.client.post(endpoint, {"client_reference": str(client_reference)})
-        replay = self.client.post(endpoint, {"client_reference": str(client_reference)})
+        payload = {"client_reference": str(client_reference), "outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1}
+        first = self.client.post(endpoint, payload)
+        replay = self.client.post(endpoint, payload)
         self.assertEqual(first.status_code, status.HTTP_200_OK)
         self.assertEqual(replay.status_code, status.HTTP_200_OK)
         self.assertEqual(CompletionLog.objects.filter(occurrence=self.occurrence).count(), 1)
@@ -222,3 +226,86 @@ class CareApiTests(APITestCase):
         self.assertEqual(generate_occurrences_for_date(self.today), 1)
         self.assertEqual(generate_occurrences_for_date(self.today), 0)
         self.assertEqual(TaskOccurrence.objects.count(), 1)
+
+    def test_caregiver_can_select_between_assigned_patients(self):
+        second = Patient.objects.create(first_name="Maryam", last_name="Abbasi", birth_date=date(1948, 6, 4))
+        CareAssignment.objects.create(user=self.caregiver, patient=second, relationship=CareAssignment.Relationship.CAREGIVER)
+        self.authenticate()
+        listing = self.client.get("/api/v1/patients/")
+        dashboard = self.client.get(f"/api/v1/patients/{second.id}/dashboard/")
+        self.assertEqual(listing.data["count"], 2)
+        self.assertEqual(dashboard.status_code, status.HTTP_200_OK)
+        self.assertEqual(dashboard.data["patient"]["id"], second.id)
+
+    def test_stale_task_version_returns_a_conflict(self):
+        self.authenticate()
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 99},
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "version_conflict")
+        self.assertEqual(int(response.data["current"]["version"]), 1)
+
+    def test_task_correction_preserves_original_completion(self):
+        self.authenticate()
+        self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+        )
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/correct/",
+            {
+                "corrected_status": TaskOccurrence.Status.PENDING,
+                "reason": "Completion was entered for the wrong time slot.",
+                "expected_version": 2,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], TaskOccurrence.Status.PENDING)
+        self.assertEqual(CompletionLog.objects.filter(occurrence=self.occurrence).count(), 1)
+        self.assertEqual(CompletionCorrection.objects.filter(occurrence=self.occurrence).count(), 1)
+        reopened = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {
+                "outcome": CompletionLog.Outcome.PARTIAL,
+                "note": "Care was completed after the record was reopened.",
+                "expected_version": 3,
+            },
+        )
+        self.assertEqual(reopened.status_code, status.HTTP_200_OK)
+        self.assertEqual(reopened.data["outcome"], CompletionLog.Outcome.PARTIAL)
+        self.assertEqual(CompletionLog.objects.filter(occurrence=self.occurrence).count(), 1)
+        self.assertEqual(CompletionCorrection.objects.filter(occurrence=self.occurrence).count(), 2)
+
+    def test_medication_administration_requires_five_rights(self):
+        medication = Medication.objects.create(patient=self.patient, name="Amlodipine", dose=5, unit="mg", route="Oral", stock_quantity=10)
+        dose = DoseLog.objects.create(medication=medication, scheduled_at=timezone.now())
+        self.authenticate()
+        endpoint = f"/api/v1/dose-logs/{dose.id}/administer/"
+        unsafe = self.client.post(endpoint, {"expected_version": 1}, format="json")
+        safe = self.client.post(
+            endpoint,
+            {
+                "expected_version": 1,
+                "verified_patient": True,
+                "verified_medication": True,
+                "verified_dose": True,
+                "verified_route": True,
+                "verified_time": True,
+            },
+            format="json",
+        )
+        self.assertEqual(unsafe.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(safe.status_code, status.HTTP_200_OK)
+        self.assertEqual(safe.data["status"], DoseLog.Status.GIVEN)
+        self.assertTrue(AuditEvent.objects.filter(action="MEDICATION_GIVEN", entity_id=str(dose.id)).exists())
+
+    def test_overdue_care_creates_and_escalates_notification(self):
+        self.occurrence.scheduled_at = timezone.now() - timedelta(hours=3)
+        self.occurrence.save(update_fields=["scheduled_at", "updated_at"])
+        result = scan_overdue_alerts()
+        alert = CareNotification.objects.get(recipient=self.caregiver, source_id=str(self.occurrence.id))
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(alert.severity, CareNotification.Severity.CRITICAL)
+        self.assertEqual(alert.escalation_level, 3)

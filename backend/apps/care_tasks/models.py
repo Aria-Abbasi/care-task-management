@@ -76,6 +76,8 @@ class TaskOccurrence(TimeStampedModel):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="completed_task_occurrences"
     )
     delayed_until = models.DateTimeField(null=True, blank=True)
+    outcome = models.CharField(max_length=16, blank=True)
+    version = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["scheduled_at"]
@@ -86,11 +88,36 @@ class TaskOccurrence(TimeStampedModel):
 
 
 class CompletionLog(TimeStampedModel):
+    class Outcome(models.TextChoices):
+        COMPLETED = "COMPLETED", "Completed"
+        PARTIAL = "PARTIAL", "Partially completed"
+        UNABLE = "UNABLE", "Unable to complete"
+        REFUSED = "REFUSED", "Patient refused"
+
     occurrence = models.OneToOneField(TaskOccurrence, on_delete=models.CASCADE, related_name="completion")
     completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="task_completion_logs")
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, default=Outcome.COMPLETED)
     note = models.TextField(blank=True)
     photo = models.ImageField(upload_to="task-completions/", blank=True)
     client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline sync")
 
     def __str__(self):
         return f"Completion of {self.occurrence}"
+
+
+class CompletionCorrection(TimeStampedModel):
+    occurrence = models.ForeignKey(TaskOccurrence, on_delete=models.CASCADE, related_name="corrections")
+    previous_status = models.CharField(max_length=12, choices=TaskOccurrence.Status.choices)
+    corrected_status = models.CharField(max_length=12, choices=TaskOccurrence.Status.choices)
+    previous_outcome = models.CharField(max_length=16, blank=True)
+    corrected_outcome = models.CharField(max_length=16, blank=True)
+    reason = models.CharField(max_length=255)
+    note = models.TextField(blank=True)
+    corrected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="task_completion_corrections")
+    client_reference = models.UUIDField(null=True, blank=True, unique=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Correction for {self.occurrence} by {self.corrected_by}"

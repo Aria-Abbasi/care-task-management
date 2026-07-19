@@ -31,6 +31,9 @@ class VitalRecord(TimeStampedModel):
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="recorded_vitals")
     note = models.TextField(blank=True)
     client_reference = models.UUIDField(null=True, blank=True, unique=True)
+    source_system = models.CharField(max_length=120, default="Haven")
+    external_id = models.CharField(max_length=160, blank=True)
+    provenance = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-recorded_at"]

@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import DoseLog, Medication, MedicationSchedule
+from .models import (
+    DoseCorrection,
+    DoseLog,
+    Medication,
+    MedicationInteraction,
+    MedicationSchedule,
+    RefillRequest,
+    StockAdjustment,
+)
 
 
 class MedicationScheduleInline(admin.TabularInline):
@@ -15,3 +23,7 @@ class MedicationAdmin(admin.ModelAdmin):
 
 
 admin.site.register(DoseLog)
+admin.site.register(DoseCorrection)
+admin.site.register(MedicationInteraction)
+admin.site.register(RefillRequest)
+admin.site.register(StockAdjustment)

@@ -2,7 +2,10 @@ from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.models import User
+from apps.clinical.services import evaluate_vital_threshold
 from apps.patients.access import patients_for_user
+from apps.safety.services import record_audit
 
 from .models import VitalRecord
 from .serializers import VitalRecordSerializer
@@ -34,7 +37,19 @@ class VitalRecordViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
+        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+            raise PermissionDenied("Family accounts cannot record clinical observations.")
         patient = serializer.validated_data["patient"]
         if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
-        serializer.save(recorded_by=self.request.user)
+        reading = serializer.save(recorded_by=self.request.user)
+        record_audit(
+            actor=self.request.user,
+            patient=patient,
+            action="VITAL_RECORDED",
+            instance=reading,
+            summary=f"Recorded {reading.get_type_display()}",
+            metadata={"source_system": "Haven", "recorded_at": reading.recorded_at.isoformat()},
+            client_reference=reading.client_reference,
+        )
+        evaluate_vital_threshold(reading)

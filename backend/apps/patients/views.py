@@ -10,11 +10,13 @@ from rest_framework.response import Response
 from apps.accounts.models import User
 from apps.care_tasks.models import TaskOccurrence
 from apps.care_tasks.serializers import TaskOccurrenceSerializer
+from apps.care_tasks.services import generate_occurrences_for_date
 from apps.common.permissions import IsCareAdmin
 from apps.health.models import VitalRecord
 from apps.health.serializers import VitalRecordSerializer
-from apps.medications.models import Medication
-from apps.medications.serializers import MedicationSerializer
+from apps.medications.models import DoseLog, Medication
+from apps.medications.serializers import DoseLogSerializer, MedicationSerializer
+from apps.medications.services import generate_dose_logs_for_date
 
 from .access import patients_for_user
 from .models import CareAssignment
@@ -37,10 +39,18 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         self._require_admin_for_write()
-        serializer.save()
+        if self.request.user.is_superuser:
+            serializer.save()
+        elif self.request.user.organization_id:
+            serializer.save(organization=self.request.user.organization)
+        else:
+            raise PermissionDenied("An administrator must belong to an organization before creating patients.")
 
     def perform_update(self, serializer):
         self._require_admin_for_write()
+        organization = serializer.validated_data.get("organization", serializer.instance.organization)
+        if not self.request.user.is_superuser and organization != self.request.user.organization:
+            raise PermissionDenied("Administrators cannot move patients outside their organization.")
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -60,6 +70,8 @@ class PatientViewSet(viewsets.ModelViewSet):
         zone = timezone.get_current_timezone()
         day_start = timezone.make_aware(datetime.combine(target_date, time.min), zone)
         day_end = day_start + timedelta(days=1)
+        generate_occurrences_for_date(target_date)
+        generate_dose_logs_for_date(target_date, patient=patient)
         occurrences = (
             TaskOccurrence.objects.filter(
                 task__patient=patient,
@@ -82,6 +94,11 @@ class PatientViewSet(viewsets.ModelViewSet):
                 latest_vitals.append(record)
 
         medications = Medication.objects.filter(patient=patient, active=True).prefetch_related("schedules")
+        dose_logs = (
+            DoseLog.objects.filter(medication__patient=patient, scheduled_at__gte=day_start, scheduled_at__lt=day_end)
+            .select_related("medication", "medication__patient", "administered_by")
+            .prefetch_related("corrections", "corrections__corrected_by")
+        )
         return Response(
             {
                 "date": target_date,
@@ -90,6 +107,7 @@ class PatientViewSet(viewsets.ModelViewSet):
                 "occurrences": TaskOccurrenceSerializer(occurrences, many=True, context={"request": request}).data,
                 "latest_vitals": VitalRecordSerializer(latest_vitals, many=True).data,
                 "medications": MedicationSerializer(medications, many=True, context={"request": request}).data,
+                "dose_logs": DoseLogSerializer(dose_logs, many=True, context={"request": request}).data,
             }
         )
 
@@ -106,3 +124,17 @@ class CareAssignmentViewSet(viewsets.ModelViewSet):
         if self.action in {"create", "update", "partial_update", "destroy"}:
             return [IsCareAdmin()]
         return [permissions.IsAuthenticated()]
+
+    def _validate_organization(self, serializer):
+        patient = serializer.validated_data.get("patient", serializer.instance.patient if serializer.instance else None)
+        user = serializer.validated_data.get("user", serializer.instance.user if serializer.instance else None)
+        if patient and user and patient.organization_id != user.organization_id:
+            raise PermissionDenied("Care assignments cannot cross organization boundaries.")
+
+    def perform_create(self, serializer):
+        self._validate_organization(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._validate_organization(serializer)
+        serializer.save()

@@ -23,6 +23,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "medical_notes",
             "photo",
             "active",
+            "organization",
             "created_at",
             "updated_at",
         ]

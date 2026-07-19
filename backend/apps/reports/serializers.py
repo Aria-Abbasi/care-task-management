@@ -10,6 +10,7 @@ class ShiftReportSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source="patient.full_name", read_only=True)
     author_name = serializers.CharField(source="author.display_name", read_only=True)
     recipient_name = serializers.CharField(source="recipient.display_name", read_only=True)
+    acknowledged_by_name = serializers.CharField(source="acknowledged_by.display_name", read_only=True)
 
     class Meta:
         model = ShiftReport
@@ -28,10 +29,13 @@ class ShiftReportSerializer(serializers.ModelSerializer):
             "client_reference",
             "status",
             "sent_at",
+            "acknowledged_by",
+            "acknowledged_by_name",
+            "acknowledged_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "author", "sent_at", "created_at", "updated_at"]
+        read_only_fields = ["id", "author", "sent_at", "acknowledged_by", "acknowledged_at", "created_at", "updated_at"]
 
     def validate(self, attrs):
         start = attrs.get("shift_started_at", getattr(self.instance, "shift_started_at", None))
