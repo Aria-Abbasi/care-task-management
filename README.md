@@ -1,27 +1,24 @@
 # Haven Care
 
-Haven is a responsive care-management PWA designed for busy caregivers. Its interface emphasizes large touch targets, urgency, and a timeline-first daily workflow.
+Haven is a production-oriented, responsive care-management PWA. It emphasizes clear patient identity, large touch targets, safe medication recording, urgency, and a timeline-first caregiver workflow.
 
-## Included in this prototype
+## Feature set
 
-- Caregiver sign-in
-- Today's task timeline with completion tracking
-- Task detail and task creation workflows
-- Weekly schedule and all-task views
-- Medication schedules and adherence overview
-- Health-vital charts and recent readings
-- Shift handover reports
-- Family and care-team messages
-- Notification, privacy, and profile settings
-- Responsive mobile navigation and offline shell caching
-
-The interface authenticates against the Django REST backend and loads assignment-scoped patient tasks, medications, and vitals. Care actions are cached in IndexedDB and replayed automatically after connectivity returns.
+- Multi-patient care with explicit organization and assignment boundaries
+- Versioned task outcomes, append-only corrections, and visible offline conflict resolution
+- Medication five-right verification, clinician order approval, allergy/interaction blocking, PRN limits, late handling, barcode lookup, stock reconciliation, and refill requests
+- In-app and background Web Push alerts with receipts, quiet hours, acknowledgement, snoozing, escalation chains, SMS/voice provider adapters, retries, and dead-letter review
+- Historical vital trends, clinician-defined thresholds, provenance, care plans, diagnoses, allergies, contacts, advance directives, wound records, and secure attachments
+- Persistent family/clinical messaging, urgent escalation, attachments/voice-note fields, mentions, and read receipts
+- Shift assignments plus handover history and acknowledgement
+- Expiring/rotating sessions, TOTP MFA, password reset, device management, remote revocation, abuse throttling, CSP, and strict production headers
+- Caregiver, clinician, family, and administrator workspaces with organization administration
+- Assignment-scoped HL7 FHIR R5 resources and an OpenAPI 3.1 contract
+- Route-level code splitting, PWA offline shell, English/Persian direction, accessibility checks, visual regression, and safety E2E tests
 
 ## Run locally
 
-Requirements: Node.js 18 or newer.
-
-In one terminal:
+Requirements: Node.js 18+, Python 3.12+, and the Python packages in `backend/requirements-dev.txt`.
 
 ```bash
 .venv/bin/python backend/manage.py migrate
@@ -36,16 +33,14 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The seeded sign-in is pre-filled. Vite proxies `/api` to Django during development; set `VITE_API_URL` when the API is hosted separately.
+Open `http://localhost:5173`. Demo accounts are `sarah / caregiver`, `doctor / clinician-demo`, `layla / family-demo`, and `admin / admin-demo`. Vite proxies `/api` to Django in development.
 
 ## Offline behavior
 
-- The latest dashboard is cached locally for offline access.
-- Task completion, task creation, vital readings, and shift handovers use unique client references and an IndexedDB mutation queue.
-- Queued changes replay in creation order when the browser reconnects.
-- The sync indicator shows offline, pending, syncing, and synced states.
-- Signing out while offline is blocked when unsynced clinical changes remain.
-- Authenticated API responses are never written to the public service-worker cache.
+- Selected patient dashboards expire locally after 24 hours; API and media responses are never placed in the public service-worker cache.
+- Clinical mutations use unique replay references and are isolated by caregiver.
+- Version conflicts remain visible until explicitly resolved. Records older than seven days stop for manual review rather than silently replaying.
+- Sign-out is paused while unsynced changes remain and clears protected local data when complete.
 
 ## Verification
 
@@ -53,15 +48,24 @@ Open `http://localhost:5173`. The seeded sign-in is pre-filled. Vite proxies `/a
 npm run lint
 npm test
 npm run build
+.venv/bin/ruff check backend
+.venv/bin/ruff format --check backend
+.venv/bin/python backend/manage.py test apps
 ```
 
-The optimized build is written to `dist/`.
+Playwright tests live in `e2e/`. `docker compose up --build` starts PostgreSQL, Redis, Django/Gunicorn, Celery workers, Celery Beat, and Nginx.
 
-## Planned production services
+## Deployment and pilot evidence
 
-- Django REST API with SQLite locally and PostgreSQL in production
-- Celery and Celery Beat for occurrences and overdue processing
-- Role-based users with explicit patient care assignments
-- Message persistence, push notifications, and conflict-resolution tooling
+Production VAPID and SMS/voice credentials must be supplied by the deploying organization. Live caregiver studies and jurisdiction-specific healthcare/privacy approval require real participants and qualified reviewers; this repository deliberately does not claim those external activities occurred.
 
-See [`backend/README.md`](backend/README.md) for API setup, endpoints, demo data, and container instructions.
+- [Operations and restore runbook](docs/OPERATIONS.md)
+- [Security, privacy, and retention baseline](docs/SECURITY_PRIVACY.md)
+- [Caregiver usability protocol](docs/CAREGIVER_USABILITY_TEST.md)
+- [Pilot release gate](docs/PILOT_RELEASE_GATE.md)
+- [OpenAPI contract](docs/openapi.yaml)
+- [Design system](docs/DESIGN_SYSTEM.md)
+
+Reference baselines: [W3C Push API](https://www.w3.org/TR/push-api/), [OWASP ASVS 5.0](https://owasp.org/www-project-application-security-verification-standard/), [Django deployment checklist](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/), and [HL7 FHIR](https://hl7.org/fhir/overview.html).
+
+See [backend/README.md](backend/README.md) for API details.

@@ -22,6 +22,7 @@ services:
       retries: 10
 
   api:
+    image: haven-api:latest
     build: ./backend
     command: sh -c "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     environment:
@@ -31,8 +32,18 @@ services:
       HAVEN_CORS_ALLOWED_ORIGINS: http://localhost:5173
       HAVEN_DATABASE_URL: postgresql://haven:haven@db:5432/haven
       HAVEN_REDIS_URL: redis://redis:6379/0
+      HAVEN_SECURE_SSL_REDIRECT: "false"
+      HAVEN_DELIVERY_WEBHOOK_SECRET: local-compose-delivery-secret-change-me
     ports:
       - "8000:8000"
+    volumes:
+      - media_data:/app/media
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live/', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     depends_on:
       db:
         condition: service_healthy
@@ -40,26 +51,60 @@ services:
         condition: service_healthy
 
   worker:
-    build: ./backend
+    image: haven-api:latest
     command: celery -A config worker --loglevel=info
     environment:
       HAVEN_DEBUG: "false"
       HAVEN_SECRET_KEY: local-compose-secret-change-me
       HAVEN_DATABASE_URL: postgresql://haven:haven@db:5432/haven
       HAVEN_REDIS_URL: redis://redis:6379/0
+      HAVEN_DELIVERY_WEBHOOK_SECRET: local-compose-delivery-secret-change-me
     depends_on:
-      - api
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   beat:
-    build: ./backend
+    image: haven-api:latest
     command: celery -A config beat --loglevel=info
     environment:
       HAVEN_DEBUG: "false"
       HAVEN_SECRET_KEY: local-compose-secret-change-me
       HAVEN_DATABASE_URL: postgresql://haven:haven@db:5432/haven
       HAVEN_REDIS_URL: redis://redis:6379/0
+      HAVEN_DELIVERY_WEBHOOK_SECRET: local-compose-delivery-secret-change-me
     depends_on:
-      - api
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: haven-web:latest
+    build: .
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backup:
+    image: postgres:17-alpine
+    profiles: ["backup"]
+    environment:
+      PGPASSWORD: haven
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["sh", "-c"]
+    command: ["pg_dump -h db -U haven -Fc haven > /backups/haven-$$(date +%Y%m%d-%H%M%S).dump"]
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  media_data:

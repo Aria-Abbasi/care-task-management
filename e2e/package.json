@@ -1,0 +1,12 @@
+{
+  "name": "haven-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "visual:update": "playwright test visual.spec.ts --update-snapshots"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.54.1"
+  }
+}

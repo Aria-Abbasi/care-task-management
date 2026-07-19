@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: haven_test
+          POSTGRES_USER: haven
+          POSTGRES_PASSWORD: haven
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U haven"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      HAVEN_DEBUG: "true"
+      HAVEN_DATABASE_URL: postgresql://haven:haven@127.0.0.1:5432/haven_test
+      HAVEN_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "20", cache: npm}
+      - run: pip install -r backend/requirements-dev.txt
+      - run: npm ci
+      - run: python backend/manage.py makemigrations --check --dry-run
+      - run: python backend/manage.py migrate
+      - run: python backend/manage.py check
+      - run: python backend/manage.py test apps
+      - run: ruff check backend && ruff format --check backend
+      - run: npm run lint && npm test && npm run build
+      - run: npm --prefix e2e install
+      - run: npm --prefix e2e exec -- playwright install --with-deps chromium
+      - run: npm --prefix e2e test -- --project=desktop-chromium
+      - run: docker compose config
+      - run: docker compose up -d db && ./scripts/backup-restore-drill.sh
