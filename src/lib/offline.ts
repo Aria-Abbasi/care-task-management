@@ -1,9 +1,11 @@
-import type { DashboardResponse } from './types'
+import type { DashboardResponse, Patient } from './types'
 
 const DB_NAME = 'haven-care'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const MUTATIONS = 'mutations'
 const CACHE = 'cache'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const MUTATION_REVIEW_MS = 7 * 24 * 60 * 60 * 1000
 
 export type QueuedMutation = {
   id: string
@@ -13,6 +15,9 @@ export type QueuedMutation = {
   body?: unknown
   createdAt: string
   attempts: number
+  status?: 'pending' | 'conflict' | 'failed'
+  lastError?: string
+  serverState?: unknown
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -51,7 +56,15 @@ export async function listMutations(userId?: number): Promise<QueuedMutation[]> 
   const transaction = database.transaction(MUTATIONS, 'readonly')
   const mutations = await requestResult(transaction.objectStore(MUTATIONS).getAll())
   database.close()
-  return mutations
+  const now = Date.now()
+  const reviewed = mutations.map((mutation) => {
+    if (now - new Date(mutation.createdAt).getTime() > MUTATION_REVIEW_MS && mutation.status === 'pending') {
+      return { ...mutation, status: 'failed' as const, lastError: 'This offline record is more than seven days old and requires manual review.' }
+    }
+    return mutation
+  })
+  await Promise.all(reviewed.filter((item, index) => item !== mutations[index]).map(updateMutation))
+  return reviewed
     .filter((mutation) => userId === undefined || mutation.userId === userId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
@@ -90,16 +103,54 @@ export async function clearOfflineData() {
 export async function cacheDashboard(dashboard: DashboardResponse, userId: number) {
   const database = await openDatabase()
   const transaction = database.transaction(CACHE, 'readwrite')
-  await requestResult(transaction.objectStore(CACHE).put({ userId, dashboard }, 'dashboard'))
+  await requestResult(transaction.objectStore(CACHE).put({ userId, patientId: dashboard.patient.id, cachedAt: new Date().toISOString(), dashboard }, `dashboard:${userId}:${dashboard.patient.id}`))
   database.close()
 }
 
-export async function readCachedDashboard(userId: number): Promise<DashboardResponse | null> {
+export async function cachePatients(patients: Patient[], userId: number) {
+  const database = await openDatabase()
+  const transaction = database.transaction(CACHE, 'readwrite')
+  await requestResult(transaction.objectStore(CACHE).put({ userId, cachedAt: new Date().toISOString(), patients }, `patients:${userId}`))
+  database.close()
+}
+
+export async function readCachedPatients(userId: number): Promise<Patient[]> {
   const database = await openDatabase()
   const transaction = database.transaction(CACHE, 'readonly')
-  const cached = await requestResult(transaction.objectStore(CACHE).get('dashboard'))
+  const cached = await requestResult(transaction.objectStore(CACHE).get(`patients:${userId}`))
+  database.close()
+  if (!cached || typeof cached !== 'object') return []
+  const record = cached as { userId?: number; cachedAt?: string; patients?: Patient[] }
+  if (!record.cachedAt || Date.now() - new Date(record.cachedAt).getTime() > CACHE_TTL_MS) return []
+  return record.userId === userId
+    ? (cached as { patients?: Patient[] }).patients || []
+    : []
+}
+
+export async function readCachedDashboard(userId: number, patientId?: number): Promise<DashboardResponse | null> {
+  const database = await openDatabase()
+  const transaction = database.transaction(CACHE, 'readonly')
+  const store = transaction.objectStore(CACHE)
+  const cached = patientId
+    ? await requestResult(store.get(`dashboard:${userId}:${patientId}`))
+    : (await requestResult(store.getAll())).find((value) => value && typeof value === 'object' && (value as { userId?: number }).userId === userId)
   database.close()
   if (!cached || typeof cached !== 'object') return null
-  const value = cached as { userId?: number; dashboard?: DashboardResponse }
+  const value = cached as { userId?: number; cachedAt?: string; dashboard?: DashboardResponse }
+  if (!value.cachedAt || Date.now() - new Date(value.cachedAt).getTime() > CACHE_TTL_MS) return null
   return value.userId === userId ? value.dashboard ?? null : null
+}
+
+export async function retryMutation(id: string) {
+  const mutations = await listMutations()
+  const mutation = mutations.find((item) => item.id === id)
+  if (!mutation) return
+  const details = mutation.serverState as { current?: { version?: number } } | undefined
+  if (details?.current?.version && mutation.body && typeof mutation.body === 'object') {
+    mutation.body = { ...(mutation.body as Record<string, unknown>), expected_version: details.current.version }
+  }
+  mutation.status = 'pending'
+  mutation.lastError = undefined
+  mutation.serverState = undefined
+  await updateMutation(mutation)
 }

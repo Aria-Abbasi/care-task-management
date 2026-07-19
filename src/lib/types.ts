@@ -8,10 +8,15 @@ export type ApiUser = {
   display_name: string
   role: 'ADMIN' | 'CAREGIVER' | 'DOCTOR' | 'FAMILY'
   is_active: boolean
+  organization: number | null
+  organization_name: string
+  mfa_enabled: boolean
 }
 
 export type Session = {
   token: string
+  session_id: number
+  expires_at: string
   user: ApiUser
 }
 
@@ -65,9 +70,32 @@ export type TaskOccurrence = {
   scheduled_at: string
   effective_scheduled_at: string
   status: 'PENDING' | 'DONE' | 'MISSED' | 'SKIPPED' | 'DELAYED'
+  outcome: '' | 'COMPLETED' | 'PARTIAL' | 'UNABLE' | 'REFUSED'
+  version: number
   completed_at: string | null
   completed_by: number | null
   delayed_until: string | null
+  completion: null | {
+    id: number
+    completed_by_name: string
+    outcome: 'COMPLETED' | 'PARTIAL' | 'UNABLE' | 'REFUSED'
+    note: string
+    created_at: string
+  }
+  corrections: TaskCorrection[]
+  updated_at: string
+}
+
+export type TaskCorrection = {
+  id: number
+  previous_status: TaskOccurrence['status']
+  corrected_status: TaskOccurrence['status']
+  previous_outcome: string
+  corrected_outcome: string
+  reason: string
+  note: string
+  corrected_by_name: string
+  created_at: string
 }
 
 export type Medication = {
@@ -82,7 +110,52 @@ export type Medication = {
   photo: string | null
   stock_quantity: number | null
   active: boolean
+  barcode: string
+  is_prn: boolean
+  prn_reason: string
+  maximum_daily_doses: number | null
+  starts_on: string | null
+  ends_on: string | null
+  approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  warnings: { severity: string; message: string; source: string }[]
   schedules: { id: number; time: string; days_of_week: number[]; instructions: string }[]
+}
+
+export type DoseLog = {
+  id: number
+  medication: number
+  medication_name: string
+  patient: number
+  patient_name: string
+  dose: string
+  unit: string
+  route: string
+  scheduled_at: string
+  status: 'SCHEDULED' | 'GIVEN' | 'MISSED' | 'REFUSED' | 'HELD'
+  version: number
+  administered_at: string | null
+  administered_by_name: string | null
+  note: string
+  verified_patient: boolean
+  verified_medication: boolean
+  verified_dose: boolean
+  verified_route: boolean
+  verified_time: boolean
+  was_late: boolean
+  late_minutes: number
+  is_prn: boolean
+  corrections: DoseCorrection[]
+  updated_at: string
+}
+
+export type DoseCorrection = {
+  id: number
+  previous_status: DoseLog['status']
+  corrected_status: DoseLog['status']
+  reason: string
+  note: string
+  corrected_by_name: string
+  created_at: string
 }
 
 export type VitalRecord = {
@@ -97,6 +170,9 @@ export type VitalRecord = {
   recorded_by: number | null
   recorded_by_name: string | null
   note: string
+  source_system: string
+  external_id: string
+  provenance: Record<string, unknown>
 }
 
 export type DashboardResponse = {
@@ -106,6 +182,120 @@ export type DashboardResponse = {
   occurrences: TaskOccurrence[]
   latest_vitals: VitalRecord[]
   medications: Medication[]
+  dose_logs: DoseLog[]
+}
+
+export type CareNotification = {
+  id: number
+  patient: number
+  patient_name: string
+  kind: 'TASK_OVERDUE' | 'DOSE_OVERDUE' | 'SYNC_CONFLICT' | 'VITAL_ALERT' | 'URGENT_MESSAGE'
+  severity: 'INFO' | 'WARNING' | 'CRITICAL'
+  state: 'UNREAD' | 'READ' | 'ACKNOWLEDGED' | 'SNOOZED'
+  title: string
+  message: string
+  source_type: string
+  source_id: string
+  escalation_level: number
+  due_at: string
+  snoozed_until: string | null
+  created_at: string
+  delivery_status: Record<string, string>
+}
+
+export type NotificationPreference = {
+  push_enabled: boolean
+  sms_enabled: boolean
+  voice_enabled: boolean
+  quiet_hours_start: string | null
+  quiet_hours_end: string | null
+  critical_override: boolean
+  timezone: string
+  updated_at: string
+}
+
+export type DeviceSession = {
+  id: number
+  device_name: string
+  user_agent: string
+  created_at: string
+  last_used_at: string
+  expires_at: string
+  revoked_at: string | null
+  active: boolean
+}
+
+export type Message = {
+  id: number
+  conversation: number
+  sender: number
+  sender_name: string
+  body: string
+  clinical: boolean
+  urgent: boolean
+  attachment: string
+  voice_note: string
+  created_at: string
+  read_receipts: { user: number; user_name: string; read_at: string }[]
+}
+
+export type Conversation = {
+  id: number
+  patient: number
+  patient_name: string
+  title: string
+  kind: 'CLINICAL' | 'FAMILY'
+  participant_details: ApiUser[]
+  latest_message: Message | null
+  updated_at: string
+}
+
+export type ShiftReport = {
+  id: number
+  patient: number
+  author_name: string
+  recipient_name: string | null
+  shift_started_at: string
+  shift_ended_at: string
+  observations: string
+  concerns: string
+  status: string
+  acknowledged_by_name: string | null
+  acknowledged_at: string | null
+  created_at: string
+}
+
+export type ShiftAssignment = {
+  id: number
+  patient: number
+  caregiver_name: string
+  starts_at: string
+  ends_at: string
+  status: string
+  notes: string
+}
+
+export type Allergy = { id: number; substance: string; reaction: string; severity: string; active: boolean; source_system: string }
+export type Diagnosis = { id: number; display: string; code: string; status: string; diagnosed_at: string | null; notes: string; source_system: string }
+export type CarePlan = { id: number; title: string; status: string; goals: string[]; instructions: string; author_name: string; starts_on: string | null; ends_on: string | null }
+export type EmergencyContact = { id: number; name: string; relationship: string; phone: string; email: string; priority: number; authorized_for_updates: boolean }
+export type AdvanceDirective = { id: number; directive_type: string; summary: string; effective_from: string | null; reviewed_at: string | null; active: boolean }
+export type ClinicalDocument = { id: number; title: string; category: string; file: string; checksum_sha256: string; retention_until: string | null; source_system: string }
+export type EscalationPolicy = { id: number; name: string; active: boolean; is_default: boolean; steps: { id: number; level: number; delay_minutes: number; channel: 'IN_APP' | 'PUSH' | 'SMS' | 'VOICE'; recipient_roles: string[] }[] }
+export type NotificationDelivery = { id: number; notification_title: string; channel: string; status: string; attempts: number; error: string; next_attempt_at: string | null; created_at: string }
+export type CaregiverAvailability = { id: number; caregiver: number; caregiver_name: string; starts_at: string; ends_at: string; available: boolean; note: string }
+
+export type AuditEvent = {
+  id: number
+  actor_name: string | null
+  patient: number
+  patient_name: string
+  action: string
+  entity_type: string
+  entity_id: string
+  summary: string
+  metadata: Record<string, unknown>
+  created_at: string
 }
 
 export type Paginated<T> = {
@@ -114,4 +304,3 @@ export type Paginated<T> = {
   previous: string | null
   results: T[]
 }
-

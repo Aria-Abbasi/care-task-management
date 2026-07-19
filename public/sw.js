@@ -1,4 +1,4 @@
-const CACHE = 'haven-shell-v2'
+const CACHE = 'haven-shell-v3'
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
@@ -27,4 +27,44 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/'))),
   )
+})
+
+self.addEventListener('push', (event) => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch { data = {} }
+  const title = data.title || 'Haven care alert'
+  const options = {
+    body: data.body || 'Open Haven to review this care alert securely.',
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    tag: data.receipt ? `haven-${data.receipt}` : 'haven-care-alert',
+    renotify: true,
+    requireInteraction: true,
+    data: { url: data.url || '/?alerts=open', receipt: data.receipt },
+  }
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, options)
+    if (data.receipt) {
+      await fetch('/api/v1/delivery-receipts/web-push/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipt: data.receipt, status: 'delivered' }),
+      }).catch(() => undefined)
+    }
+  })())
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = new URL(event.notification.data?.url || '/?alerts=open', self.location.origin).href
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin)
+    if (existing) {
+      await existing.focus()
+      existing.navigate(target)
+      return
+    }
+    await self.clients.openWindow(target)
+  })())
 })

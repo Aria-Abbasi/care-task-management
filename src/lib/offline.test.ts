@@ -10,6 +10,7 @@ import {
   pendingMutationCount,
   queueMutation,
   readCachedDashboard,
+  retryMutation,
 } from './offline'
 import type { DashboardResponse } from './types'
 
@@ -49,7 +50,7 @@ describe('offline care queue', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await flushMutationQueue('test-token', 1)).toBe(1)
+    expect(await flushMutationQueue('test-token', 1)).toEqual({ synced: 1, conflicts: 0, failed: 0 })
     expect(await pendingMutationCount()).toBe(0)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/occurrences/1/complete/',
@@ -76,6 +77,7 @@ describe('offline care queue', () => {
       occurrences: [],
       latest_vitals: [],
       medications: [],
+      dose_logs: [],
       task_summary: { total: 0, done: 0, overdue: 0, pending: 0 },
     } satisfies DashboardResponse
 
@@ -98,8 +100,33 @@ describe('offline care queue', () => {
       headers: { 'Content-Type': 'application/json' },
     })))
 
-    expect(await flushMutationQueue('test-token', 1)).toBe(0)
+    expect(await flushMutationQueue('test-token', 1)).toEqual({ synced: 0, conflicts: 0, failed: 0 })
     expect(await pendingMutationCount()).toBe(1)
     expect((await listMutations())[0].attempts).toBe(1)
+  })
+
+  it('keeps version conflicts for caregiver review and can retry with the server version', async () => {
+    await queueMutation({
+      id: 'conflicted-completion',
+      userId: 1,
+      path: '/occurrences/1/complete/',
+      method: 'POST',
+      body: { outcome: 'COMPLETED', expected_version: 1 },
+      createdAt: '2026-07-16T10:00:00Z',
+      attempts: 0,
+      status: 'pending',
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: 'This care record changed on another device.',
+      code: 'version_conflict',
+      current: { version: 2, status: 'DONE' },
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } })))
+
+    expect(await flushMutationQueue('test-token', 1)).toEqual({ synced: 0, conflicts: 1, failed: 0 })
+    expect((await listMutations(1))[0].status).toBe('conflict')
+    await retryMutation('conflicted-completion')
+    const retried = (await listMutations(1))[0]
+    expect(retried.status).toBe('pending')
+    expect(retried.body).toMatchObject({ expected_version: 2 })
   })
 })
