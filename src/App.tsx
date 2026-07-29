@@ -755,7 +755,7 @@ function App() {
             <div><span className="mobile-page-title">{activeLabel}</span><span className="breadcrumb">{shellCopy.careOf} <ChevronRight size={13} /> {activeLabel}</span></div>
           </div>
           <div className="topbar-actions">
-            <button className={`sync-status ${online ? '' : 'offline'}`} onClick={() => pendingSync ? setView('safety') : syncNow()} title={online ? shellCopy.pendingTitle : shellCopy.offlineTitle}>
+            <button className={`sync-status ${syncing ? 'syncing' : !online ? 'offline' : pendingSync ? 'pending' : 'synced'}`} onClick={() => pendingSync ? setView('safety') : syncNow()} title={online ? shellCopy.pendingTitle : shellCopy.offlineTitle} disabled={syncing} aria-live="polite">
               {syncing ? <RefreshCw className="spinning" /> : online ? <Cloud /> : <CloudOff />}
               <span>{syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending : shellCopy.synced}</span>
             </button>
