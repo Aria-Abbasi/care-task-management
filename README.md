@@ -5,6 +5,7 @@ Haven is a production-oriented, responsive care-management PWA. It emphasizes cl
 ## Feature set
 
 - Multi-patient care with explicit organization and assignment boundaries
+- Guided task creation with reusable care templates, priority and caregiver assignment, daily/weekly/interval/one-time schedules, safe completion windows, occurrence previews, and category-specific safety guidance
 - Versioned task outcomes, append-only corrections, and visible offline conflict resolution
 - Medication five-right verification, clinician order approval, allergy/interaction blocking, PRN limits, late handling, barcode lookup, stock reconciliation, and refill requests
 - In-app and background Web Push alerts with receipts, quiet hours, acknowledgement, snoozing, escalation chains, SMS/voice provider adapters, retries, and dead-letter review
