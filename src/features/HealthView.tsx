@@ -1,21 +1,42 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, HeartPulse, Plus, Thermometer, Weight } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Activity, AlertCircle, HeartPulse, Plus, RefreshCw, Thermometer, Weight } from 'lucide-react'
+
+import { PageHeader } from '../components/PageHeader'
 import { getVitals } from '../lib/api'
 import type { Patient, Session, VitalRecord } from '../lib/types'
-import { PageHeader } from '../components/PageHeader'
 
 const labels: Record<VitalRecord['type'], string> = { BLOOD_PRESSURE: 'Blood pressure', HEART_RATE: 'Heart rate', OXYGEN: 'Oxygen saturation', TEMPERATURE: 'Temperature', WEIGHT: 'Weight', GLUCOSE: 'Blood glucose' }
 
-export default function HealthView({ session, patient, latest, onRecord }: { session: Session; patient: Patient; latest: VitalRecord[]; onRecord: () => void }) {
+function chartPath(values: number[], min: number, max: number) {
+  return values.map((value, index) => `${index ? 'L' : 'M'} ${40 + index * (620 / Math.max(values.length - 1, 1))} ${190 - ((value - min) / Math.max(max - min, 1)) * 140}`).join(' ')
+}
+
+export default function HealthView({ session, patient, latest, onRecord, canRecord = true, locale = 'en' }: { session: Session; patient: Patient; latest: VitalRecord[]; onRecord: () => void; canRecord?: boolean; locale?: string }) {
+  const fa = locale === 'fa'
+  const vitalLabels = fa ? { BLOOD_PRESSURE: 'فشار خون', HEART_RATE: 'ضربان قلب', OXYGEN: 'اشباع اکسیژن', TEMPERATURE: 'دما', WEIGHT: 'وزن', GLUCOSE: 'قند خون' } : labels
+  const t = fa ? { eyebrow: 'روندهای بالینی', title: 'اندازه‌گیری‌های سلامت', description: 'سوابق تاریخی با منشأ مشخص؛ هشدارها هرگز تشخیص خودکار ایجاد نمی‌کنند.', record: 'ثبت علائم حیاتی', retry: 'تلاش دوباره', vitalType: 'نوع اندازه‌گیری', months: '۳ ماه', days: (days: number) => `${days} روز`, history: 'روند', systolic: 'سیستولیک', diastolic: 'دیاستولیک', loading: 'در حال بارگذاری اندازه‌گیری‌ها', noRange: 'در این بازه اندازه‌گیری ثبت نشده است', provenance: 'منشأ ثبت', noReading: 'بدون ثبت', imported: 'رکورد واردشده' } : { eyebrow: 'CLINICAL TRENDS', title: 'Health readings', description: 'Historical records with source provenance; alerts never make an automatic diagnosis.', record: 'Record vital', retry: 'Try again', vitalType: 'Vital type', months: '3 months', days: (days: number) => `${days} days`, history: 'history', systolic: 'Systolic', diastolic: 'Diastolic', loading: 'Loading readings', noRange: 'No readings in this range', provenance: 'Record provenance', noReading: 'No reading', imported: 'Imported record' }
   const [vitals, setVitals] = useState<VitalRecord[]>(latest)
   const [range, setRange] = useState(7)
   const [type, setType] = useState<VitalRecord['type']>('BLOOD_PRESSURE')
-  useEffect(() => { getVitals(session.token, patient.id).then(setVitals).catch(() => setVitals(latest)) }, [latest, patient.id, session.token])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { setVitals(await getVitals(session.token, patient.id)) }
+    catch { setVitals(latest); setError('Historical readings could not be refreshed.') }
+    finally { setLoading(false) }
+  }, [latest, patient.id, session.token])
+  useEffect(() => { load() }, [load])
   const points = useMemo(() => vitals.filter((item) => item.type === type && Date.now() - new Date(item.recorded_at).getTime() <= range * 86_400_000).slice(-40), [range, type, vitals])
-  const numeric = points.map((item) => Number(item.value)).filter(Number.isFinite)
-  const min = Math.min(...numeric, 0); const max = Math.max(...numeric, 1)
-  const path = points.map((item, index) => `${index ? 'L' : 'M'} ${40 + index * (620 / Math.max(points.length - 1, 1))} ${190 - ((Number(item.value) - min) / Math.max(max - min, 1)) * 140}`).join(' ')
-  return <><PageHeader eyebrow="CLINICAL TRENDS" title="Health readings" description="Historical records with source provenance; alerts never make an automatic diagnosis." action={<button className="primary-button" onClick={onRecord}><Plus />Record vital</button>} /><section className="main-card bp-chart"><div className="chart-title"><div><span className="icon-box rose"><HeartPulse /></span><span><small>{labels[type].toUpperCase()}</small><h3>{points.at(-1)?.value || '—'} <em>{points.at(-1)?.unit || ''}</em></h3></span></div><select value={type} onChange={(event) => setType(event.target.value as VitalRecord['type'])}>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><div className="chart-tabs">{[7, 30, 90].map((days) => <button className={range === days ? 'active' : ''} onClick={() => setRange(days)} key={days}>{days === 90 ? '3 months' : `${days} days`}</button>)}</div><svg viewBox="0 0 700 230" role="img" aria-label={`${labels[type]} history`}>{[35, 85, 135, 185].map((y) => <line key={y} x1="35" y1={y} x2="680" y2={y} className="grid-line" />)}{path && <path d={path} className="chart-line systolic" />}</svg>{!points.length && <div className="empty-care compact"><Activity /><strong>No readings in this range</strong></div>}</section><div className="vital-cards"><Vital icon={<Activity />} label="Oxygen" record={latest.find((item) => item.type === 'OXYGEN')} /><Vital icon={<Weight />} label="Weight" record={latest.find((item) => item.type === 'WEIGHT')} /><Vital icon={<Thermometer />} label="Temperature" record={latest.find((item) => item.type === 'TEMPERATURE')} /></div><section className="main-card recent-readings"><div className="subsection-heading"><h3>Record provenance</h3></div>{[...vitals].reverse().slice(0, 50).map((item) => <div className="reading-row" key={item.id}><span>{new Date(item.recorded_at).toLocaleString()}</span><strong>{labels[item.type]}</strong><b>{item.value}{item.secondary_value ? `/${item.secondary_value}` : ''} {item.unit}</b><em>{item.source_system || 'Haven'}</em><span>{item.recorded_by_name || 'Imported record'}</span></div>)}</section></>
+  const primary = points.map((item) => Number(item.value)).filter(Number.isFinite)
+  const secondary = type === 'BLOOD_PRESSURE' ? points.map((item) => Number(item.secondary_value)).filter(Number.isFinite) : []
+  const allValues = [...primary, ...secondary]
+  const min = Math.min(...allValues, 0)
+  const max = Math.max(...allValues, 1)
+  return <><PageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} action={canRecord ? <button className="primary-button" onClick={onRecord}><Plus />{t.record}</button> : undefined} />
+    {error && <div className="workspace-notice"><AlertCircle />{error}<button className="text-button" onClick={load}>{t.retry}</button></div>}
+    <section className="main-card bp-chart"><div className="chart-title"><div><span className="icon-box rose"><HeartPulse /></span><span><small>{vitalLabels[type].toUpperCase()}</small><h3>{points.at(-1)?.value || '—'}{points.at(-1)?.secondary_value ? `/${points.at(-1)?.secondary_value}` : ''} <em>{points.at(-1)?.unit || ''}</em></h3></span></div><select aria-label={t.vitalType} value={type} onChange={(event) => setType(event.target.value as VitalRecord['type'])}>{Object.entries(vitalLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><div className="chart-tabs">{[7, 30, 90].map((days) => <button className={range === days ? 'active' : ''} onClick={() => setRange(days)} key={days}>{days === 90 ? t.months : t.days(days)}</button>)}</div><svg viewBox="0 0 700 230" role="img" aria-label={`${vitalLabels[type]} ${t.history}`}>{[35, 85, 135, 185].map((y) => <line key={y} x1="35" y1={y} x2="680" y2={y} className="grid-line" />)}{primary.length > 0 && <path d={chartPath(primary, min, max)} className="chart-line systolic" />}{secondary.length > 0 && <path d={chartPath(secondary, min, max)} className="chart-line diastolic" />}</svg>{type === 'BLOOD_PRESSURE' && points.length > 0 && <div className="chart-legend"><span><i className="systolic" />{t.systolic}</span><span><i className="diastolic" />{t.diastolic}</span></div>}{loading && <div className="empty-care compact"><RefreshCw className="spinning" /><strong>{t.loading}</strong></div>}{!loading && !points.length && <div className="empty-care compact"><Activity /><strong>{t.noRange}</strong></div>}</section>
+    <div className="vital-cards"><Vital icon={<Activity />} label={vitalLabels.OXYGEN} record={latest.find((item) => item.type === 'OXYGEN')} locale={locale} noReading={t.noReading} /><Vital icon={<Weight />} label={vitalLabels.WEIGHT} record={latest.find((item) => item.type === 'WEIGHT')} locale={locale} noReading={t.noReading} /><Vital icon={<Thermometer />} label={vitalLabels.TEMPERATURE} record={latest.find((item) => item.type === 'TEMPERATURE')} locale={locale} noReading={t.noReading} /></div><section className="main-card recent-readings"><div className="subsection-heading"><h3>{t.provenance}</h3></div>{[...vitals].reverse().slice(0, 50).map((item) => <div className="reading-row" key={item.id}><span>{new Date(item.recorded_at).toLocaleString(fa ? 'fa-IR-u-ca-persian' : undefined)}</span><strong>{vitalLabels[item.type]}</strong><b>{item.value}{item.secondary_value ? `/${item.secondary_value}` : ''} {item.unit}</b><em>{item.source_system || 'Haven'}</em><span>{item.recorded_by_name || t.imported}</span></div>)}</section></>
 }
 
-function Vital({ icon, label, record }: { icon: React.ReactNode; label: string; record?: VitalRecord }) { return <article className="vital-card"><div className="icon-box blue">{icon}</div><small>{label}</small><h3>{record?.value || '—'}<em>{record?.unit || ''}</em></h3><p>{record ? new Date(record.recorded_at).toLocaleString() : 'No reading'}</p></article> }
+function Vital({ icon, label, record, locale, noReading }: { icon: React.ReactNode; label: string; record?: VitalRecord; locale: string; noReading: string }) { return <article className="vital-card"><div className="icon-box blue">{icon}</div><small>{label}</small><h3>{record?.value || '—'}<em>{record?.unit || ''}</em></h3><p>{record ? new Date(record.recorded_at).toLocaleString(locale === 'fa' ? 'fa-IR-u-ca-persian' : undefined) : noReading}</p></article> }
