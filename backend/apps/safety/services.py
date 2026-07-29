@@ -177,7 +177,7 @@ def _destination_hint(user, channel):
 def scan_overdue_alerts(now=None, grace_minutes=30):
     now = now or timezone.now()
     cutoff = now - timedelta(minutes=grace_minutes)
-    task_filter = Q(delayed_until__isnull=True, scheduled_at__lt=cutoff) | Q(delayed_until__lt=cutoff)
+    task_filter = Q(delayed_until__isnull=True, scheduled_at__lt=now) | Q(delayed_until__lt=now)
     occurrences = TaskOccurrence.objects.filter(
         task_filter,
         status__in=[
@@ -185,16 +185,20 @@ def scan_overdue_alerts(now=None, grace_minutes=30):
             TaskOccurrence.Status.MISSED,
             TaskOccurrence.Status.DELAYED,
         ],
-    ).select_related("task", "task__patient")
+    ).select_related("task", "task__patient", "schedule")
     doses = DoseLog.objects.filter(status=DoseLog.Status.SCHEDULED, scheduled_at__lt=cutoff).select_related(
         "medication", "medication__patient"
     )
     created = escalated = 0
     for occurrence in occurrences:
+        due_at = occurrence.delayed_until or occurrence.scheduled_at
+        allowed_minutes = occurrence.schedule.window_after_minutes if occurrence.schedule else grace_minutes
+        if due_at + timedelta(minutes=allowed_minutes) >= now:
+            continue
         values = _upsert_alert(
             kind=CareNotification.Kind.TASK_OVERDUE,
             source=occurrence,
-            due_at=occurrence.delayed_until or occurrence.scheduled_at,
+            due_at=due_at,
             now=now,
         )
         created += values[0]

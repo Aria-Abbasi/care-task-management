@@ -20,7 +20,7 @@ class Patient(TimeStampedModel):
     medical_notes = models.TextField(blank=True)
     photo = models.ImageField(upload_to="patients/", blank=True)
     active = models.BooleanField(default=True)
-    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, null=True, blank=True, related_name="patients")
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, related_name="patients")
 
     @property
     def full_name(self):

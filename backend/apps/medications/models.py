@@ -75,6 +75,14 @@ class DoseLog(TimeStampedModel):
     verified_time = models.BooleanField(default=False)
     was_late = models.BooleanField(default=False)
     late_minutes = models.PositiveIntegerField(default=0)
+    class TimingStatus(models.TextChoices):
+        ON_TIME = "ON_TIME", "On time"
+        EARLY = "EARLY", "Administered early"
+        LATE = "LATE", "Administered late"
+
+    timing_status = models.CharField(max_length=12, choices=TimingStatus.choices, default=TimingStatus.ON_TIME)
+    timing_variance_minutes = models.IntegerField(default=0)
+    timing_reason = models.TextField(blank=True)
     is_prn = models.BooleanField(default=False)
 
     class Meta:

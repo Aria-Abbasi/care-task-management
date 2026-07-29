@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
-from django.test import override_settings
+from django.core.management import call_command
+from django.test import TestCase, override_settings
+from django.urls import resolve
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -12,6 +14,18 @@ from apps.health.models import VitalRecord
 from apps.medications.models import DoseLog, Medication
 from apps.patients.models import CareAssignment, Patient
 from apps.safety.models import CareNotification, NotificationDelivery
+
+
+class DemoSeedTests(TestCase):
+    def test_seed_is_idempotent_with_required_patient_organization(self):
+        call_command("seed_demo", verbosity=0)
+        call_command("seed_demo", verbosity=0)
+
+        organization = Organization.objects.get(slug="haven-demo")
+        self.assertFalse(Patient.objects.filter(organization__isnull=True).exists())
+        self.assertEqual(Patient.objects.filter(first_name="Hassan", last_name="Abbasi").count(), 1)
+        self.assertEqual(Patient.objects.filter(first_name="Maryam", last_name="Abbasi").count(), 1)
+        self.assertEqual(Patient.objects.filter(organization=organization).count(), 2)
 
 
 class ProductionFeatureTests(APITestCase):
@@ -51,6 +65,29 @@ class ProductionFeatureTests(APITestCase):
 
     def authenticate(self, user=None):
         self.client.force_authenticate(user=user or self.user)
+
+    def test_frontend_api_contract_paths_resolve(self):
+        paths = [
+            "/api/v1/assignments/",
+            "/api/v1/tasks/",
+            "/api/v1/task-templates/",
+            "/api/v1/occurrences/1/complete/",
+            "/api/v1/occurrences/1/completion-photo/",
+            "/api/v1/occurrences/1/delay/",
+            "/api/v1/occurrences/1/skip/",
+            "/api/v1/medications/1/prn-dose/",
+            "/api/v1/medications/barcode/",
+            "/api/v1/conversations/",
+            "/api/v1/messages/1/attachment/",
+            "/api/v1/clinical-documents/1/download/",
+            "/api/v1/shift-assignments/1/check_in/",
+            "/api/v1/push-subscriptions/",
+            "/api/v1/mfa/disable/",
+            "/api/v1/sessions/1/revoke/",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertIsNotNone(resolve(path))
 
     def test_login_issues_expiring_rotatable_and_revocable_session(self):
         response = self.client.post("/api/v1/auth/login/", {"login": self.user.email, "password": "Strong-pass-123"}, format="json")

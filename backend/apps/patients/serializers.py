@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserSerializer
+from apps.common.timezones import patient_timezone
 
 from .models import CareAssignment, Patient
 
@@ -28,11 +29,12 @@ class PatientSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {"organization": {"required": False}}
 
     def get_age(self, obj):
         from django.utils import timezone
 
-        today = timezone.localdate()
+        today = timezone.localdate(timezone=patient_timezone(obj))
         return today.year - obj.birth_date.year - ((today.month, today.day) < (obj.birth_date.month, obj.birth_date.day))
 
 

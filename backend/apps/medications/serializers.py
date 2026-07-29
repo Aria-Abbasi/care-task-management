@@ -1,8 +1,11 @@
+from datetime import datetime, time, timedelta
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.common.exceptions import VersionConflict
+from apps.common.timezones import patient_timezone
 from apps.safety.services import record_audit, resolve_source_alerts
 
 from .models import (
@@ -180,6 +183,9 @@ class DoseLogSerializer(serializers.ModelSerializer):
             "verified_time",
             "was_late",
             "late_minutes",
+            "timing_status",
+            "timing_variance_minutes",
+            "timing_reason",
             "is_prn",
             "corrections",
             "created_at",
@@ -200,6 +206,9 @@ class DoseLogSerializer(serializers.ModelSerializer):
             "verified_time",
             "was_late",
             "late_minutes",
+            "timing_status",
+            "timing_variance_minutes",
+            "timing_reason",
             "is_prn",
             "created_at",
             "updated_at",
@@ -207,8 +216,13 @@ class DoseLogSerializer(serializers.ModelSerializer):
 
 
 class AdministerDoseSerializer(serializers.Serializer):
+    TIMING_WINDOW_MINUTES = 30
+
     expected_version = serializers.IntegerField(min_value=1)
     note = serializers.CharField(required=False, allow_blank=True)
+    administered_at = serializers.DateTimeField(required=False)
+    timing_reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    timing_acknowledged = serializers.BooleanField(required=False, default=False)
     client_reference = serializers.UUIDField(required=False)
     verified_patient = serializers.BooleanField()
     verified_medication = serializers.BooleanField()
@@ -241,8 +255,20 @@ class AdministerDoseSerializer(serializers.Serializer):
             raise serializers.ValidationError({"verification": f"Confirm the {', '.join(missing)} before administration."})
         if dose.status != DoseLog.Status.SCHEDULED:
             raise serializers.ValidationError("This dose already has an outcome. Use correction if it is wrong.")
+        administered_at = attrs.get("administered_at") or timezone.now()
+        if administered_at > timezone.now() + timedelta(minutes=5):
+            raise serializers.ValidationError({"administered_at": "Administration time cannot be more than five minutes in the future."})
+        attrs["administered_at"] = administered_at
+        if not dose.is_prn:
+            variance_seconds = (administered_at - dose.scheduled_at).total_seconds()
+            if abs(variance_seconds) > self.TIMING_WINDOW_MINUTES * 60:
+                if not attrs.get("timing_reason", "").strip():
+                    raise serializers.ValidationError({"timing_reason": "A reason is required when a dose is administered outside the 30-minute time window."})
+                if not attrs.get("timing_acknowledged"):
+                    raise serializers.ValidationError({"timing_acknowledged": "Acknowledge the early or late administration before recording the dose."})
         medication = dose.medication
-        today = timezone.localdate()
+        zone = patient_timezone(medication.patient)
+        today = timezone.localtime(administered_at, timezone=zone).date()
         if medication.approval_status != Medication.ApprovalStatus.APPROVED:
             raise serializers.ValidationError("This medication order is not clinically approved.")
         if medication.starts_on and today < medication.starts_on:
@@ -250,8 +276,15 @@ class AdministerDoseSerializer(serializers.Serializer):
         if medication.ends_on and today > medication.ends_on:
             raise serializers.ValidationError("This medication order has ended.")
         if medication.max_daily_doses:
+            day_start = timezone.make_aware(datetime.combine(today, time.min), zone)
+            day_end = day_start + timedelta(days=1)
             given_today = (
-                DoseLog.objects.filter(medication=medication, status=DoseLog.Status.GIVEN, administered_at__date=today)
+                DoseLog.objects.filter(
+                    medication=medication,
+                    status=DoseLog.Status.GIVEN,
+                    administered_at__gte=day_start,
+                    administered_at__lt=day_end,
+                )
                 .exclude(pk=dose.pk)
                 .count()
             )
@@ -268,12 +301,28 @@ class AdministerDoseSerializer(serializers.Serializer):
             raise VersionConflict(dose_state(dose))
         user = self.context["request"].user
         dose.status = DoseLog.Status.GIVEN
-        dose.administered_at = timezone.now()
+        dose.administered_at = self.validated_data["administered_at"]
         dose.administered_by = user
         dose.note = self.validated_data.get("note", "")
         dose.client_reference = self.validated_data.get("client_reference")
-        dose.late_minutes = max(0, int((dose.administered_at - dose.scheduled_at).total_seconds() // 60))
-        dose.was_late = dose.late_minutes > 30
+        if dose.is_prn:
+            # PRN orders have no scheduled administration time; retain the actual timestamp only.
+            dose.timing_variance_minutes = 0
+            dose.late_minutes = 0
+            dose.was_late = False
+            dose.timing_status = DoseLog.TimingStatus.ON_TIME
+            dose.timing_reason = ""
+        else:
+            variance_seconds = (dose.administered_at - dose.scheduled_at).total_seconds()
+            dose.timing_variance_minutes = int(variance_seconds / 60)
+            dose.late_minutes = max(0, dose.timing_variance_minutes)
+            dose.was_late = dose.timing_variance_minutes > self.TIMING_WINDOW_MINUTES
+            dose.timing_status = (
+                DoseLog.TimingStatus.EARLY if variance_seconds < -self.TIMING_WINDOW_MINUTES * 60
+                else DoseLog.TimingStatus.LATE if variance_seconds > self.TIMING_WINDOW_MINUTES * 60
+                else DoseLog.TimingStatus.ON_TIME
+            )
+            dose.timing_reason = self.validated_data.get("timing_reason", "").strip()
         for field in ["verified_patient", "verified_medication", "verified_dose", "verified_route", "verified_time"]:
             setattr(dose, field, self.validated_data[field])
         dose.version += 1
@@ -292,6 +341,9 @@ class AdministerDoseSerializer(serializers.Serializer):
                 "verified_time",
                 "was_late",
                 "late_minutes",
+                "timing_status",
+                "timing_variance_minutes",
+                "timing_reason",
                 "updated_at",
             ]
         )
@@ -304,8 +356,19 @@ class AdministerDoseSerializer(serializers.Serializer):
             patient=dose.medication.patient,
             action="MEDICATION_GIVEN",
             instance=dose,
-            summary=f"Administered {dose.medication.name} {dose.medication.dose:g} {dose.medication.unit}",
-            metadata={"route": dose.medication.route, "scheduled_at": dose.scheduled_at.isoformat(), "note": dose.note},
+            summary=(
+                f"Administered {dose.medication.name} {dose.medication.dose:g} {dose.medication.unit}"
+                + (f" ({dose.timing_status.lower().replace('_', ' ')} by {abs(dose.timing_variance_minutes)} minutes)" if dose.timing_status != DoseLog.TimingStatus.ON_TIME else "")
+            ),
+            metadata={
+                "route": dose.medication.route,
+                "scheduled_at": dose.scheduled_at.isoformat(),
+                "administered_at": dose.administered_at.isoformat(),
+                "timing_status": dose.timing_status,
+                "timing_variance_minutes": dose.timing_variance_minutes,
+                "timing_reason": dose.timing_reason,
+                "note": dose.note,
+            },
             client_reference=dose.client_reference,
         )
         resolve_source_alerts("dose_log", dose.id)

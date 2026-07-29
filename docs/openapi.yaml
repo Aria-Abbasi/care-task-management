@@ -10,8 +10,10 @@ security:
 components:
   securitySchemes:
     sessionToken:
-      type: http
-      scheme: bearer
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Use `Token <expiring-session-token>`.
   schemas:
     Error:
       type: object
@@ -61,6 +63,25 @@ paths:
       summary: List patients visible through organization and assignment boundaries
       responses:
         '200': {description: Patient list}
+  /assignments/:
+    get:
+      summary: List care-team assignments for accessible patients
+      responses:
+        '200': {description: Assignment list}
+  /tasks/:
+    get:
+      summary: List all task definitions independently of the displayed day
+      responses:
+        '200': {description: Task definition list}
+    post:
+      summary: Create a structured task definition and schedules
+      responses:
+        '201': {description: Task created}
+  /task-templates/:
+    get:
+      summary: List reusable organization task templates
+      responses:
+        '200': {description: Task template list}
   /patients/{id}/dashboard/:
     get:
       summary: Daily task, dose, medication, and vital dashboard
@@ -84,6 +105,16 @@ paths:
         - {name: id, in: path, required: true, schema: {type: integer}}
       responses:
         '200': {description: Correction appended}
+  /occurrences/{id}/delay/:
+    post:
+      summary: Delay an occurrence with version checking and an audited reason
+      responses:
+        '200': {description: Occurrence delayed}
+  /occurrences/{id}/skip/:
+    post:
+      summary: Skip an occurrence with a documented unable or refused outcome
+      responses:
+        '200': {description: Occurrence skipped}
   /dose-logs/{id}/administer/:
     post:
       summary: Administer after five-right verification and daily-dose checks
@@ -103,6 +134,10 @@ paths:
       responses:
         '200': {description: Notification preferences}
   /push-subscriptions/:
+    get:
+      summary: List this user's browser push subscriptions
+      responses:
+        '200': {description: Push subscription list}
     post:
       summary: Register or refresh a browser Push API subscription
       responses:

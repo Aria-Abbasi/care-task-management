@@ -4,14 +4,17 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.care_tasks.models import TaskOccurrence
 from apps.care_tasks.serializers import TaskOccurrenceSerializer
 from apps.care_tasks.services import generate_occurrences_for_date
+from apps.communications.models import CaregiverAvailability, ShiftAssignment
+from apps.communications.serializers import CaregiverAvailabilitySerializer, ShiftAssignmentSerializer
 from apps.common.permissions import IsCareAdmin
+from apps.common.timezones import patient_timezone
 from apps.health.models import VitalRecord
 from apps.health.serializers import VitalRecordSerializer
 from apps.medications.models import DoseLog, Medication
@@ -40,6 +43,8 @@ class PatientViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         self._require_admin_for_write()
         if self.request.user.is_superuser:
+            if not serializer.validated_data.get("organization"):
+                raise ValidationError({"organization": "Choose the organization that owns this patient."})
             serializer.save()
         elif self.request.user.organization_id:
             serializer.save(organization=self.request.user.organization)
@@ -63,14 +68,14 @@ class PatientViewSet(viewsets.ModelViewSet):
         patient = self.get_object()
         date_value = request.query_params.get("date")
         try:
-            target_date = datetime.strptime(date_value, "%Y-%m-%d").date() if date_value else timezone.localdate()
+            zone = patient_timezone(patient)
+            target_date = datetime.strptime(date_value, "%Y-%m-%d").date() if date_value else timezone.localdate(timezone=zone)
         except ValueError:
             return Response({"date": "Use YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
 
-        zone = timezone.get_current_timezone()
         day_start = timezone.make_aware(datetime.combine(target_date, time.min), zone)
         day_end = day_start + timedelta(days=1)
-        generate_occurrences_for_date(target_date)
+        generate_occurrences_for_date(target_date, patient=patient)
         generate_dose_logs_for_date(target_date, patient=patient)
         occurrences = (
             TaskOccurrence.objects.filter(
@@ -110,6 +115,41 @@ class PatientViewSet(viewsets.ModelViewSet):
                 "dose_logs": DoseLogSerializer(dose_logs, many=True, context={"request": request}).data,
             }
         )
+
+    @action(detail=True, methods=["get"])
+    def calendar(self, request, pk=None):
+        """Return a bounded ISO-date range of care events and coverage data."""
+        patient = self.get_object()
+        start_value = request.query_params.get("start")
+        end_value = request.query_params.get("end")
+        if not start_value or not end_value:
+            return Response({"detail": "Provide start and end dates in YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            start_date = datetime.strptime(start_value, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_value, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"detail": "Use YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
+        if end_date <= start_date or (end_date - start_date).days > 42:
+            return Response({"detail": "Calendar ranges must be between 1 and 42 days."}, status=status.HTTP_400_BAD_REQUEST)
+
+        for offset in range((end_date - start_date).days):
+            generate_occurrences_for_date(start_date + timedelta(days=offset), patient=patient)
+
+        zone = patient_timezone(patient)
+        range_start = timezone.make_aware(datetime.combine(start_date, time.min), zone)
+        range_end = timezone.make_aware(datetime.combine(end_date, time.min), zone)
+        occurrences = TaskOccurrence.objects.filter(task__patient=patient, scheduled_at__gte=range_start, scheduled_at__lt=range_end).select_related("task", "completed_by", "schedule").prefetch_related("task__schedules")
+        shifts = ShiftAssignment.objects.filter(patient=patient, starts_at__lt=range_end, ends_at__gt=range_start).select_related("patient", "caregiver")
+        assignments = CareAssignment.objects.filter(patient=patient, active=True).select_related("user", "patient")
+        availability = CaregiverAvailability.objects.filter(caregiver_id__in=assignments.values_list("user_id", flat=True), starts_at__lt=range_end, ends_at__gt=range_start).select_related("caregiver")
+        return Response({
+            "start": start_value,
+            "end": end_value,
+            "occurrences": TaskOccurrenceSerializer(occurrences, many=True, context={"request": request}).data,
+            "shifts": ShiftAssignmentSerializer(shifts, many=True, context={"request": request}).data,
+            "availability": CaregiverAvailabilitySerializer(availability, many=True, context={"request": request}).data,
+            "assignments": CareAssignmentSerializer(assignments, many=True, context={"request": request}).data,
+        })
 
 
 class CareAssignmentViewSet(viewsets.ModelViewSet):

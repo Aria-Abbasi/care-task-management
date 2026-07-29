@@ -84,7 +84,7 @@ def medication_administration_resource(dose):
         "status": status_map[dose.status],
         "medication": {"reference": reference("MedicationRequest", dose.medication_id, dose.medication.name)},
         "subject": reference("Patient", dose.medication.patient_id, dose.medication.patient.full_name),
-        "occurenceDateTime": (dose.administered_at or dose.scheduled_at).isoformat(),
+        "occurredDateTime": (dose.administered_at or dose.scheduled_at).isoformat(),
         "performer": [{"actor": reference("Practitioner", dose.administered_by_id, dose.administered_by.display_name)}]
         if dose.administered_by
         else [],

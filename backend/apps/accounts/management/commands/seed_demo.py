@@ -77,15 +77,43 @@ class Command(BaseCommand):
                 user.set_password(password)
                 user.save(update_fields=["password"])
 
-        patient, _ = Patient.objects.get_or_create(
-            first_name="Hassan",
-            last_name="Abbasi",
-            defaults={
+        def get_demo_patient(first_name, last_name, defaults):
+            patient = Patient.objects.filter(
+                first_name=first_name,
+                last_name=last_name,
+                organization=organization,
+            ).first()
+            if patient:
+                return patient
+
+            # Demo databases created before organization scoping have NULL here.
+            # Adopt those records instead of creating duplicates that leave existing
+            # care assignments pointing at an inaccessible patient.
+            patient = Patient.objects.filter(
+                first_name=first_name,
+                last_name=last_name,
+                organization__isnull=True,
+            ).first()
+            if patient:
+                patient.organization = organization
+                patient.save(update_fields=["organization", "updated_at"])
+                return patient
+
+            return Patient.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                organization=organization,
+                **defaults,
+            )
+
+        patient = get_demo_patient(
+            "Hassan",
+            "Abbasi",
+            {
                 "birth_date": date(1944, 3, 12),
                 "gender": Patient.Gender.MALE,
                 "room": "204",
                 "medical_notes": "Low-sodium diet. Monitor blood pressure twice daily.",
-                "organization": organization,
             },
         )
         CareAssignment.objects.get_or_create(
@@ -99,15 +127,14 @@ class Command(BaseCommand):
             user=admin, patient=patient, defaults={"relationship": CareAssignment.Relationship.ADMINISTRATOR}
         )
 
-        second_patient, _ = Patient.objects.get_or_create(
-            first_name="Maryam",
-            last_name="Abbasi",
-            defaults={
+        second_patient = get_demo_patient(
+            "Maryam",
+            "Abbasi",
+            {
                 "birth_date": date(1948, 6, 4),
                 "gender": Patient.Gender.FEMALE,
                 "room": "205",
                 "medical_notes": "Uses a walking aid. Encourage hydration throughout the day.",
-                "organization": organization,
             },
         )
         CareAssignment.objects.get_or_create(

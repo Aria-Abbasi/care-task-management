@@ -6,7 +6,7 @@ from apps.common.exceptions import VersionConflict
 from apps.patients.models import CareAssignment
 from apps.safety.services import record_audit, resolve_source_alerts
 
-from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import CareTaskTemplate, CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
 
 
 def occurrence_state(occurrence):
@@ -42,6 +42,57 @@ class TaskScheduleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Weekdays must be ISO values from 1 through 7.")
         return sorted(set(value))
 
+    def validate(self, attrs):
+        instance = self.instance
+        frequency = attrs.get(
+            "frequency",
+            getattr(instance, "frequency", TaskSchedule.Frequency.DAILY),
+        )
+        scheduled_time = attrs.get("time", getattr(instance, "time", None))
+        specific_date = attrs.get("specific_date", getattr(instance, "specific_date", None))
+        interval_hours = attrs.get("interval_hours", getattr(instance, "interval_hours", None))
+        days_of_week = attrs.get("days_of_week", getattr(instance, "days_of_week", []))
+        starts_on = attrs.get("starts_on", getattr(instance, "starts_on", None))
+        ends_on = attrs.get("ends_on", getattr(instance, "ends_on", None))
+        errors = {}
+
+        if starts_on and ends_on and starts_on > ends_on:
+            errors["ends_on"] = "The end date cannot be earlier than the start date."
+        if specific_date and starts_on and specific_date < starts_on:
+            errors["specific_date"] = "The one-time date cannot be earlier than the start date."
+        if specific_date and ends_on and specific_date > ends_on:
+            errors["specific_date"] = "The one-time date cannot be later than the end date."
+
+        if frequency == TaskSchedule.Frequency.ONCE:
+            if not specific_date:
+                errors["specific_date"] = "Choose a date for a one-time task."
+            if not scheduled_time:
+                errors["time"] = "Choose a time for a one-time task."
+        elif frequency == TaskSchedule.Frequency.DAILY:
+            if not scheduled_time:
+                errors["time"] = "Choose a time for a daily task."
+        elif frequency == TaskSchedule.Frequency.WEEKLY:
+            if not scheduled_time:
+                errors["time"] = "Choose a time for a weekly task."
+            if not days_of_week:
+                errors["days_of_week"] = "Choose at least one weekday."
+        elif frequency == TaskSchedule.Frequency.INTERVAL:
+            if not interval_hours:
+                errors["interval_hours"] = "Choose how many hours should pass between occurrences."
+            elif interval_hours > 24:
+                errors["interval_hours"] = "Intervals cannot be longer than 24 hours."
+            if not scheduled_time:
+                errors["time"] = "Choose the first time of day for an interval task."
+
+        for field in ["window_before_minutes", "window_after_minutes"]:
+            value = attrs.get(field, getattr(instance, field, 0))
+            if value > 1440:
+                errors[field] = "A completion window cannot exceed 24 hours."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
 
 class TaskSerializer(serializers.ModelSerializer):
     schedules = TaskScheduleSerializer(many=True, required=False)
@@ -58,6 +109,11 @@ class TaskSerializer(serializers.ModelSerializer):
             "category",
             "priority",
             "instructions",
+            "expected_outcome",
+            "safety_notes",
+            "equipment",
+            "requires_note",
+            "requires_photo",
             "assigned_to",
             "assigned_to_name",
             "client_reference",
@@ -71,8 +127,25 @@ class TaskSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         patient = attrs.get("patient", getattr(self.instance, "patient", None))
         assigned_to = attrs.get("assigned_to", getattr(self.instance, "assigned_to", None))
+        schedules = attrs.get("schedules")
         if patient and assigned_to and not CareAssignment.objects.filter(patient=patient, user=assigned_to, active=True).exists():
             raise serializers.ValidationError({"assigned_to": "This user is not actively assigned to the patient."})
+        if self.instance is None and not schedules:
+            raise serializers.ValidationError({"schedules": "Add at least one schedule to the task."})
+        if schedules:
+            seen = set()
+            for schedule in schedules:
+                fingerprint = (
+                    schedule.get("frequency", TaskSchedule.Frequency.DAILY),
+                    schedule.get("time"),
+                    schedule.get("specific_date"),
+                    schedule.get("interval_hours"),
+                    tuple(schedule.get("days_of_week", [])),
+                    schedule.get("event_reference", "").strip().casefold(),
+                )
+                if fingerprint in seen:
+                    raise serializers.ValidationError({"schedules": "The task contains a duplicate schedule."})
+                seen.add(fingerprint)
         return attrs
 
     @transaction.atomic
@@ -92,6 +165,36 @@ class TaskSerializer(serializers.ModelSerializer):
             for schedule in schedules:
                 TaskSchedule.objects.create(task=instance, **schedule)
         return instance
+
+
+class CareTaskTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CareTaskTemplate
+        fields = [
+            "id",
+            "organization",
+            "name",
+            "title",
+            "category",
+            "priority",
+            "instructions",
+            "expected_outcome",
+            "safety_notes",
+            "equipment",
+            "schedule_defaults",
+            "active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+
+    def validate_schedule_defaults(self, value):
+        if not value:
+            return value
+        allowed = {choice for choice, _ in TaskSchedule.Frequency.choices}
+        if value.get("frequency", TaskSchedule.Frequency.DAILY) not in allowed:
+            raise serializers.ValidationError("Choose a supported frequency.")
+        return value
 
 
 class CompletionLogSerializer(serializers.ModelSerializer):
@@ -185,6 +288,10 @@ class CompleteOccurrenceSerializer(serializers.Serializer):
             raise serializers.ValidationError("This task is already complete. Use correction to change its outcome.")
         if attrs["outcome"] != CompletionLog.Outcome.COMPLETED and not attrs.get("note", "").strip():
             raise serializers.ValidationError({"note": "Add a note for partial, unable, or refused care."})
+        if occurrence.task.requires_note and not attrs.get("note", "").strip():
+            raise serializers.ValidationError({"note": "A completion note is required for this task."})
+        if occurrence.task.requires_photo and not attrs.get("photo"):
+            raise serializers.ValidationError({"photo": "A completion photo is required for this task."})
         return attrs
 
     @transaction.atomic

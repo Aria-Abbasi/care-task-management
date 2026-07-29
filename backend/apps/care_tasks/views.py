@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -7,11 +8,13 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.common.exceptions import VersionConflict
+from apps.common.timezones import patient_timezone
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
 
-from .models import Task, TaskOccurrence
+from .models import CareTaskTemplate, Task, TaskOccurrence
 from .serializers import (
+    CareTaskTemplateSerializer,
     CompleteOccurrenceSerializer,
     CorrectOccurrenceSerializer,
     DelayOccurrenceSerializer,
@@ -59,7 +62,7 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         self.require_care_role()
         self.validate_patient_access(serializer.validated_data["patient"])
         task = serializer.save()
-        generate_occurrences_for_date(timezone.localdate())
+        generate_occurrences_for_date(timezone.localdate(timezone=patient_timezone(task.patient)), patient=task.patient)
         record_audit(
             actor=self.request.user,
             patient=task.patient,
@@ -92,6 +95,38 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
             instance=instance,
             summary=f"Deactivated care task: {instance.title}",
         )
+
+
+class CareTaskTemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = CareTaskTemplateSerializer
+    filterset_fields = ["active", "category"]
+    search_fields = ["name", "title", "instructions"]
+    ordering_fields = ["name", "created_at"]
+
+    def get_queryset(self):
+        queryset = CareTaskTemplate.objects.select_related("organization")
+        if self.request.user.is_superuser:
+            return queryset
+        return queryset.filter(organization_id=self.request.user.organization_id)
+
+    def perform_create(self, serializer):
+        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+            raise PermissionDenied("Only administrators can create task templates.")
+        organization = self.request.user.organization
+        if not organization:
+            raise PermissionDenied("Assign this account to an organization first.")
+        serializer.save(organization=organization)
+
+    def perform_update(self, serializer):
+        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+            raise PermissionDenied("Only administrators can edit task templates.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+            raise PermissionDenied("Only administrators can archive task templates.")
+        instance.active = False
+        instance.save(update_fields=["active", "updated_at"])
 
 
 class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
@@ -129,6 +164,21 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         serializer.save()
         occurrence.refresh_from_db()
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="completion-photo")
+    def completion_photo(self, request, pk=None):
+        occurrence = self.get_object()
+        completion = getattr(occurrence, "completion", None)
+        if not completion or not completion.photo:
+            raise PermissionDenied("No completion photo is attached.")
+        record_audit(
+            actor=request.user,
+            patient=occurrence.task.patient,
+            action="TASK_COMPLETION_PHOTO_DOWNLOADED",
+            instance=occurrence,
+            summary=f"Downloaded completion photo for {occurrence.task.title}",
+        )
+        return FileResponse(completion.photo.open("rb"), as_attachment=True, filename=completion.photo.name.rsplit("/", 1)[-1])
 
     @action(detail=True, methods=["post"])
     def correct(self, request, pk=None):

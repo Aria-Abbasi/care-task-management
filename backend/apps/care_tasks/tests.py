@@ -5,31 +5,36 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import User
+from apps.accounts.models import Organization, User
+from apps.communications.models import CaregiverAvailability, ShiftAssignment
 from apps.health.models import VitalRecord
-from apps.medications.models import DoseLog, Medication
+from apps.medications.models import DoseLog, Medication, MedicationSchedule
+from apps.medications.services import generate_dose_logs_for_date
 from apps.patients.models import CareAssignment, Patient
 from apps.reports.models import ShiftReport
 from apps.safety.models import AuditEvent, CareNotification
 from apps.safety.services import scan_overdue_alerts
 
 from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
-from .services import generate_occurrences_for_date
+from .services import generate_occurrences_for_date, mark_overdue_occurrences
 
 
 class CareApiTests(APITestCase):
     def setUp(self):
+        self.organization = Organization.objects.create(name="Haven Test", slug="haven-test", timezone=str(timezone.get_current_timezone()))
         self.caregiver = User.objects.create_user(
             username="sarah",
             email="sarah@example.com",
             password="safe-test-password",
             role=User.Role.CAREGIVER,
+            organization=self.organization,
         )
         self.patient = Patient.objects.create(
             first_name="Hassan",
             last_name="Abbasi",
             birth_date=date(1944, 3, 12),
             gender=Patient.Gender.MALE,
+            organization=self.organization,
         )
         CareAssignment.objects.create(
             user=self.caregiver,
@@ -70,11 +75,35 @@ class CareApiTests(APITestCase):
         self.assertIn("token", response.data)
         self.assertEqual(response.data["user"]["role"], User.Role.CAREGIVER)
 
+    def test_calendar_returns_occurrences_and_coverage_for_iso_range(self):
+        ShiftAssignment.objects.create(
+            patient=self.patient,
+            caregiver=self.caregiver,
+            starts_at=self.scheduled_at - timedelta(hours=1),
+            ends_at=self.scheduled_at + timedelta(hours=7),
+        )
+        CaregiverAvailability.objects.create(
+            caregiver=self.caregiver,
+            starts_at=self.scheduled_at - timedelta(hours=2),
+            ends_at=self.scheduled_at + timedelta(hours=8),
+            available=True,
+        )
+        self.authenticate()
+        start = self.today.isoformat()
+        end = (self.today + timedelta(days=7)).isoformat()
+        response = self.client.get(f"/api/v1/patients/{self.patient.id}/calendar/?start={start}&end={end}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["start"], start)
+        self.assertGreaterEqual(len(response.data["occurrences"]), 1)
+        self.assertEqual(response.data["shifts"][0]["caregiver_name"], self.caregiver.display_name)
+        self.assertEqual(response.data["availability"][0]["available"], True)
+
     def test_user_only_sees_assigned_patients(self):
         Patient.objects.create(
             first_name="Private",
             last_name="Patient",
             birth_date=date(1950, 1, 1),
+            organization=self.organization,
         )
         self.authenticate()
         response = self.client.get("/api/v1/patients/")
@@ -111,6 +140,52 @@ class CareApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("assigned_to", response.data)
 
+    def test_structured_task_safety_fields_and_completion_requirements(self):
+        self.authenticate()
+        response = self.client.patch(
+            f"/api/v1/tasks/{self.task.id}/",
+            {
+                "expected_outcome": "A valid reading is recorded.",
+                "safety_notes": "Stop if the patient feels dizzy.",
+                "equipment": ["validated monitor", "correct cuff"],
+                "requires_note": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["equipment"], ["validated monitor", "correct cuff"])
+        completion = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(completion.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("note", completion.data)
+
+    def test_organization_task_templates_are_admin_managed(self):
+        self.authenticate()
+        payload = {
+            "name": "Safe hydration",
+            "title": "Hydration check",
+            "category": Task.Category.HEALTH,
+            "priority": Task.Priority.NORMAL,
+            "instructions": "Offer approved fluids.",
+            "equipment": ["intake record"],
+            "schedule_defaults": {"frequency": TaskSchedule.Frequency.DAILY, "time": "11:00"},
+        }
+        self.assertEqual(self.client.post("/api/v1/task-templates/", payload, format="json").status_code, status.HTTP_403_FORBIDDEN)
+        admin = User.objects.create_user(
+            username="admin-template",
+            email="admin-template@example.com",
+            password="safe-test-password",
+            role=User.Role.ADMIN,
+            organization=self.organization,
+        )
+        self.client.force_authenticate(admin)
+        created = self.client.post("/api/v1/task-templates/", payload, format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created.data["organization"], self.organization.id)
+
     def test_task_creation_generates_today_occurrence_and_prevents_replay_duplicates(self):
         self.authenticate()
         client_reference = uuid4()
@@ -129,6 +204,97 @@ class CareApiTests(APITestCase):
         created_task = Task.objects.get(client_reference=client_reference)
         self.assertTrue(created_task.occurrences.filter(scheduled_at__date=self.today).exists())
         self.assertEqual(Task.objects.filter(client_reference=client_reference).count(), 1)
+
+    def test_task_schedule_requires_fields_for_selected_recurrence(self):
+        self.authenticate()
+        response = self.client.post(
+            "/api/v1/tasks/",
+            {
+                "patient": self.patient.id,
+                "title": "Weekly mobility review",
+                "category": Task.Category.ACTIVITY,
+                "schedules": [{"frequency": TaskSchedule.Frequency.WEEKLY, "time": "10:00:00"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("days_of_week", str(response.data))
+
+    def test_interval_schedule_generates_each_occurrence_for_the_day(self):
+        self.occurrence.delete()
+        self.schedule.delete()
+        TaskSchedule.objects.create(
+            task=self.task,
+            frequency=TaskSchedule.Frequency.INTERVAL,
+            time=time(6),
+            interval_hours=6,
+        )
+
+        self.assertEqual(generate_occurrences_for_date(self.today), 3)
+        self.assertEqual(
+            list(self.task.occurrences.values_list("scheduled_at__hour", flat=True)),
+            [6, 12, 18],
+        )
+
+    def test_task_rejects_duplicate_schedules(self):
+        self.authenticate()
+        schedule = {"frequency": TaskSchedule.Frequency.DAILY, "time": "12:00:00"}
+        response = self.client.post(
+            "/api/v1/tasks/",
+            {
+                "patient": self.patient.id,
+                "title": "Duplicate lunch check",
+                "category": Task.Category.MEAL,
+                "schedules": [schedule, schedule],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("duplicate schedule", str(response.data).lower())
+
+    def test_overdue_scanner_honors_each_schedule_completion_window(self):
+        now = timezone.now()
+        long_window_task = Task.objects.create(
+            patient=self.patient,
+            title="Long completion window",
+            category=Task.Category.PERSONAL_CARE,
+        )
+        long_window_schedule = TaskSchedule.objects.create(
+            task=long_window_task,
+            frequency=TaskSchedule.Frequency.DAILY,
+            time=now.time(),
+            window_after_minutes=60,
+        )
+        still_open = TaskOccurrence.objects.create(
+            task=long_window_task,
+            schedule=long_window_schedule,
+            scheduled_at=now - timedelta(minutes=45),
+        )
+        short_window_task = Task.objects.create(
+            patient=self.patient,
+            title="Short completion window",
+            category=Task.Category.PERSONAL_CARE,
+        )
+        short_window_schedule = TaskSchedule.objects.create(
+            task=short_window_task,
+            frequency=TaskSchedule.Frequency.DAILY,
+            time=now.time(),
+            window_after_minutes=10,
+        )
+        overdue = TaskOccurrence.objects.create(
+            task=short_window_task,
+            schedule=short_window_schedule,
+            scheduled_at=now - timedelta(minutes=20),
+        )
+
+        mark_overdue_occurrences()
+
+        still_open.refresh_from_db()
+        overdue.refresh_from_db()
+        self.assertEqual(still_open.status, TaskOccurrence.Status.PENDING)
+        self.assertEqual(overdue.status, TaskOccurrence.Status.MISSED)
 
     def test_dashboard_aggregates_daily_care(self):
         VitalRecord.objects.create(
@@ -228,7 +394,9 @@ class CareApiTests(APITestCase):
         self.assertEqual(TaskOccurrence.objects.count(), 1)
 
     def test_caregiver_can_select_between_assigned_patients(self):
-        second = Patient.objects.create(first_name="Maryam", last_name="Abbasi", birth_date=date(1948, 6, 4))
+        second = Patient.objects.create(
+            first_name="Maryam", last_name="Abbasi", birth_date=date(1948, 6, 4), organization=self.organization
+        )
         CareAssignment.objects.create(user=self.caregiver, patient=second, relationship=CareAssignment.Relationship.CAREGIVER)
         self.authenticate()
         listing = self.client.get("/api/v1/patients/")
@@ -299,7 +467,69 @@ class CareApiTests(APITestCase):
         self.assertEqual(unsafe.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(safe.status_code, status.HTTP_200_OK)
         self.assertEqual(safe.data["status"], DoseLog.Status.GIVEN)
+        medication.refresh_from_db()
+        self.assertEqual(medication.stock_quantity, 9)
         self.assertTrue(AuditEvent.objects.filter(action="MEDICATION_GIVEN", entity_id=str(dose.id)).exists())
+
+    def test_late_medication_requires_an_acknowledged_reason_and_preserves_schedule(self):
+        medication = Medication.objects.create(patient=self.patient, name="Metformin", dose=500, unit="mg", route="Oral", stock_quantity=10)
+        scheduled_at = timezone.now() - timedelta(hours=2)
+        dose = DoseLog.objects.create(medication=medication, scheduled_at=scheduled_at)
+        self.authenticate()
+        endpoint = f"/api/v1/dose-logs/{dose.id}/administer/"
+        rights = {
+            "verified_patient": True,
+            "verified_medication": True,
+            "verified_dose": True,
+            "verified_route": True,
+            "verified_time": True,
+        }
+        unsafe = self.client.post(endpoint, {"expected_version": 1, "administered_at": timezone.now().isoformat(), **rights}, format="json")
+        self.assertEqual(unsafe.status_code, status.HTTP_400_BAD_REQUEST)
+        safe = self.client.post(
+            endpoint,
+            {
+                "expected_version": 1,
+                "administered_at": timezone.now().isoformat(),
+                "timing_reason": "Patient was away from the unit.",
+                "timing_acknowledged": True,
+                **rights,
+            },
+            format="json",
+        )
+        self.assertEqual(safe.status_code, status.HTTP_200_OK)
+        self.assertEqual(safe.data["timing_status"], DoseLog.TimingStatus.LATE)
+        self.assertGreater(safe.data["timing_variance_minutes"], 30)
+        self.assertEqual(safe.data["timing_reason"], "Patient was away from the unit.")
+        dose.refresh_from_db()
+        self.assertEqual(dose.scheduled_at, scheduled_at)
+        audit = AuditEvent.objects.get(action="MEDICATION_GIVEN", entity_id=str(dose.id))
+        self.assertEqual(audit.metadata["timing_status"], DoseLog.TimingStatus.LATE)
+        self.assertEqual(audit.metadata["timing_reason"], "Patient was away from the unit.")
+
+    def test_early_medication_requires_an_acknowledged_reason(self):
+        medication = Medication.objects.create(patient=self.patient, name="Vitamin D", dose=1, unit="tablet", route="Oral")
+        scheduled_at = timezone.now() + timedelta(hours=2)
+        dose = DoseLog.objects.create(medication=medication, scheduled_at=scheduled_at)
+        self.authenticate()
+        response = self.client.post(
+            f"/api/v1/dose-logs/{dose.id}/administer/",
+            {
+                "expected_version": 1,
+                "administered_at": timezone.now().isoformat(),
+                "timing_reason": "Clinician instructed administration before transport.",
+                "timing_acknowledged": True,
+                "verified_patient": True,
+                "verified_medication": True,
+                "verified_dose": True,
+                "verified_route": True,
+                "verified_time": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["timing_status"], DoseLog.TimingStatus.EARLY)
+        self.assertLess(response.data["timing_variance_minutes"], -30)
 
     def test_overdue_care_creates_and_escalates_notification(self):
         self.occurrence.scheduled_at = timezone.now() - timedelta(hours=3)
@@ -309,3 +539,48 @@ class CareApiTests(APITestCase):
         self.assertEqual(result["created"], 1)
         self.assertEqual(alert.severity, CareNotification.Severity.CRITICAL)
         self.assertEqual(alert.escalation_level, 3)
+
+    def test_notification_scanner_honors_task_completion_window(self):
+        self.schedule.window_after_minutes = 90
+        self.schedule.save(update_fields=["window_after_minutes", "updated_at"])
+        self.occurrence.scheduled_at = timezone.now() - timedelta(minutes=45)
+        self.occurrence.save(update_fields=["scheduled_at", "updated_at"])
+
+        result = scan_overdue_alerts()
+
+        self.assertEqual(result["created"], 0)
+        self.assertFalse(CareNotification.objects.filter(source_id=str(self.occurrence.id)).exists())
+
+    def test_dose_generation_respects_order_approval_and_dates(self):
+        today = timezone.localdate()
+        valid = Medication.objects.create(
+            patient=self.patient,
+            name="Valid order",
+            dose=1,
+            unit="tablet",
+            approval_status=Medication.ApprovalStatus.APPROVED,
+            starts_on=today,
+        )
+        pending = Medication.objects.create(
+            patient=self.patient,
+            name="Pending order",
+            dose=1,
+            unit="tablet",
+            approval_status=Medication.ApprovalStatus.PENDING,
+        )
+        ended = Medication.objects.create(
+            patient=self.patient,
+            name="Ended order",
+            dose=1,
+            unit="tablet",
+            approval_status=Medication.ApprovalStatus.APPROVED,
+            ends_on=today - timedelta(days=1),
+        )
+        for medication in [valid, pending, ended]:
+            MedicationSchedule.objects.create(medication=medication, time=time(18))
+
+        generate_dose_logs_for_date(today)
+
+        self.assertTrue(DoseLog.objects.filter(medication=valid).exists())
+        self.assertFalse(DoseLog.objects.filter(medication=pending).exists())
+        self.assertFalse(DoseLog.objects.filter(medication=ended).exists())

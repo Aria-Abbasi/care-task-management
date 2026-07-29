@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+from apps.accounts.models import Organization
 from apps.common.models import TimeStampedModel
 from apps.patients.models import Patient
 
@@ -25,6 +26,11 @@ class Task(TimeStampedModel):
     category = models.CharField(max_length=24, choices=Category.choices)
     priority = models.CharField(max_length=12, choices=Priority.choices, default=Priority.NORMAL)
     instructions = models.TextField(blank=True)
+    expected_outcome = models.TextField(blank=True)
+    safety_notes = models.TextField(blank=True)
+    equipment = models.JSONField(default=list, blank=True)
+    requires_note = models.BooleanField(default=False)
+    requires_photo = models.BooleanField(default=False)
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_tasks"
     )
@@ -41,7 +47,6 @@ class TaskSchedule(TimeStampedModel):
         DAILY = "DAILY", "Daily"
         WEEKLY = "WEEKLY", "Weekly"
         INTERVAL = "INTERVAL", "Interval"
-        AFTER_EVENT = "AFTER_EVENT", "After event"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="schedules")
     frequency = models.CharField(max_length=16, choices=Frequency.choices, default=Frequency.DAILY)
@@ -57,6 +62,29 @@ class TaskSchedule(TimeStampedModel):
 
     def __str__(self):
         return f"{self.task.title} · {self.get_frequency_display()}"
+
+
+class CareTaskTemplate(TimeStampedModel):
+    """Organization-owned, reusable safe-care task defaults."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="care_task_templates")
+    name = models.CharField(max_length=120)
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=24, choices=Task.Category.choices)
+    priority = models.CharField(max_length=12, choices=Task.Priority.choices, default=Task.Priority.NORMAL)
+    instructions = models.TextField(blank=True)
+    expected_outcome = models.TextField(blank=True)
+    safety_notes = models.TextField(blank=True)
+    equipment = models.JSONField(default=list, blank=True)
+    schedule_defaults = models.JSONField(default=dict, blank=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["organization", "name"], name="unique_org_care_task_template")]
+
+    def __str__(self):
+        return f"{self.organization}: {self.name}"
 
 
 class TaskOccurrence(TimeStampedModel):
