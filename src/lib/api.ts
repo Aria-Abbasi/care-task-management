@@ -180,7 +180,7 @@ export const revokeOtherSessions = async (token: string) => request<{ revoked: n
 export const requestPasswordReset = async (loginValue: string) => request<{ detail: string }>('/auth/password-reset/', { method: 'POST', body: JSON.stringify({ login: loginValue }) })
 export const confirmPasswordReset = async (uid: string, resetToken: string, newPassword: string) => request<void>('/auth/password-reset/confirm/', { method: 'POST', body: JSON.stringify({ uid, token: resetToken, new_password: newPassword }) })
 export const changePassword = async (token: string, currentPassword: string, newPassword: string, confirmation: string) => request<void>('/auth/change-password/', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, confirm_password: confirmation }) }, token)
-export const setupMfa = async (token: string) => request<{ secret: string; otpauth_uri: string; qr_code_data_url: string }>('/mfa/setup/', { method: 'POST' }, token)
+export const setupMfa = async (token: string) => request<{ secret: string; otpauth_uri: string; qr_code_data_url?: string }>('/mfa/setup/', { method: 'POST' }, token)
 export const confirmMfa = async (token: string, code: string) => request<{ enabled: boolean }>('/mfa/confirm/', { method: 'POST', body: JSON.stringify({ code }) }, token)
 
 function base64UrlToBytes(value: string) {

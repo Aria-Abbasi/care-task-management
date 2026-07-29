@@ -787,6 +787,9 @@ button.mfa-action-card:hover { border-color:#9bc6b9; background:#f2faf7; box-sha
 .mfa-enrollment { grid-template-columns:118px minmax(0, 1fr); align-items:center; }
 .mfa-enrollment > label, .mfa-enrollment > button { grid-column:1 / -1; }
 .mfa-qr-code { width:108px; height:108px; border:8px solid #fff; border-radius:10px; background:#fff; box-shadow:0 1px 0 #d7e5df, 0 7px 17px rgba(24, 77, 65, .08); image-rendering:auto; }
+.mfa-qr-fallback { width:108px; min-height:108px; display:grid; place-items:center; align-content:center; gap:7px; padding:10px; border:1px dashed #b8d8ce; border-radius:10px; color:#397568; background:#f5fbf8; text-align:center; }
+.mfa-qr-fallback svg { width:22px; }
+.mfa-qr-fallback span { font-size:9px; font-weight:700; line-height:1.45; }
 .mfa-enrollment p { margin:0 0 7px; color:#42635b; font-size:10px; font-weight:800; }
 .mfa-enrollment code { display:block; line-height:1.55; }
 .password-change-card { display:grid; grid-template-columns:34px minmax(0, 1fr); align-items:center; gap:10px; margin-top:15px; border:1px solid #d8e7e1; border-radius:12px; padding:12px; background:linear-gradient(135deg, #fbfefd, #f4faf7); }
