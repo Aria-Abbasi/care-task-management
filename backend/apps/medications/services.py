@@ -24,6 +24,10 @@ def generate_dose_logs_for_date(target_date, patient=None):
         if schedule.days_of_week and target_date.isoweekday() not in schedule.days_of_week:
             continue
         scheduled_at = timezone.make_aware(datetime.combine(target_date, schedule.time), patient_timezone(schedule.medication.patient))
-        _, was_created = DoseLog.objects.get_or_create(medication=schedule.medication, scheduled_at=scheduled_at)
+        _, was_created = DoseLog.objects.get_or_create(
+            medication=schedule.medication,
+            scheduled_at=scheduled_at,
+            defaults={"timing_window_minutes": schedule.medication.timing_window_minutes},
+        )
         created += int(was_created)
     return created

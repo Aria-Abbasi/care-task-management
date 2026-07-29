@@ -99,6 +99,7 @@ describe('safe caregiver dialogs', () => {
       late_minutes: 0,
       timing_status: 'ON_TIME',
       timing_variance_minutes: 0,
+      timing_window_minutes: 30,
       timing_reason: '',
       is_prn: false,
       corrections: [],

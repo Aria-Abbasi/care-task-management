@@ -29,6 +29,22 @@ class Medication(TimeStampedModel):
     is_prn = models.BooleanField(default=False, help_text="Administer only as needed")
     prn_reason = models.CharField(max_length=255, blank=True)
     max_daily_doses = models.PositiveSmallIntegerField(null=True, blank=True)
+    timing_window_minutes = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Allowed minutes before or after the scheduled time before a timing exception is recorded.",
+    )
+    timing_escalation_level = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="Highest organization escalation level used when this order is administered outside its timing window.",
+    )
+    timing_escalation_policy = models.ForeignKey(
+        "safety.EscalationPolicy",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timing_escalation_medications",
+        help_text="Optional organization escalation chain for timing exceptions; the organization default is used when empty.",
+    )
     approval_status = models.CharField(max_length=16, choices=ApprovalStatus.choices, default=ApprovalStatus.APPROVED)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_medications"
@@ -75,6 +91,7 @@ class DoseLog(TimeStampedModel):
     verified_time = models.BooleanField(default=False)
     was_late = models.BooleanField(default=False)
     late_minutes = models.PositiveIntegerField(default=0)
+
     class TimingStatus(models.TextChoices):
         ON_TIME = "ON_TIME", "On time"
         EARLY = "EARLY", "Administered early"
@@ -82,6 +99,7 @@ class DoseLog(TimeStampedModel):
 
     timing_status = models.CharField(max_length=12, choices=TimingStatus.choices, default=TimingStatus.ON_TIME)
     timing_variance_minutes = models.IntegerField(default=0)
+    timing_window_minutes = models.PositiveSmallIntegerField(default=30)
     timing_reason = models.TextField(blank=True)
     is_prn = models.BooleanField(default=False)
 

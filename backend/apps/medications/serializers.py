@@ -6,7 +6,9 @@ from rest_framework import serializers
 
 from apps.common.exceptions import VersionConflict
 from apps.common.timezones import patient_timezone
-from apps.safety.services import record_audit, resolve_source_alerts
+from apps.patients.models import CareAssignment
+from apps.safety.models import CareNotification, EscalationPolicy
+from apps.safety.services import queue_notification_deliveries, record_audit, resolve_source_alerts
 
 from .models import (
     DoseCorrection,
@@ -41,6 +43,11 @@ class MedicationSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source="patient.full_name", read_only=True)
     approved_by_name = serializers.CharField(source="approved_by.display_name", read_only=True)
     warnings = serializers.SerializerMethodField()
+    timing_window_minutes = serializers.IntegerField(min_value=0, max_value=720, required=False)
+    timing_escalation_level = serializers.IntegerField(min_value=1, max_value=3, required=False)
+    timing_escalation_policy = serializers.PrimaryKeyRelatedField(
+        queryset=EscalationPolicy.objects.filter(active=True), required=False, allow_null=True
+    )
 
     class Meta:
         model = Medication
@@ -64,6 +71,9 @@ class MedicationSerializer(serializers.ModelSerializer):
             "is_prn",
             "prn_reason",
             "max_daily_doses",
+            "timing_window_minutes",
+            "timing_escalation_level",
+            "timing_escalation_policy",
             "approval_status",
             "approved_by",
             "approved_by_name",
@@ -89,6 +99,11 @@ class MedicationSerializer(serializers.ModelSerializer):
         if patient and duplicates.exists():
             raise serializers.ValidationError({"name": "An active medication with this name already exists."})
         if patient:
+            timing_policy = attrs.get("timing_escalation_policy", getattr(self.instance, "timing_escalation_policy", None))
+            if timing_policy and timing_policy.organization_id != patient.organization_id:
+                raise serializers.ValidationError(
+                    {"timing_escalation_policy": "Choose an active escalation policy from this patient's organization."}
+                )
             active_names = list(Medication.objects.filter(patient=patient, active=True).values_list("name", flat=True))
             severe = MedicationInteraction.objects.filter(
                 active=True, severity=MedicationInteraction.Severity.SEVERE, organization__in=[patient.organization, None]
@@ -185,6 +200,7 @@ class DoseLogSerializer(serializers.ModelSerializer):
             "late_minutes",
             "timing_status",
             "timing_variance_minutes",
+            "timing_window_minutes",
             "timing_reason",
             "is_prn",
             "corrections",
@@ -208,6 +224,7 @@ class DoseLogSerializer(serializers.ModelSerializer):
             "late_minutes",
             "timing_status",
             "timing_variance_minutes",
+            "timing_window_minutes",
             "timing_reason",
             "is_prn",
             "created_at",
@@ -216,8 +233,6 @@ class DoseLogSerializer(serializers.ModelSerializer):
 
 
 class AdministerDoseSerializer(serializers.Serializer):
-    TIMING_WINDOW_MINUTES = 30
-
     expected_version = serializers.IntegerField(min_value=1)
     note = serializers.CharField(required=False, allow_blank=True)
     administered_at = serializers.DateTimeField(required=False)
@@ -261,11 +276,18 @@ class AdministerDoseSerializer(serializers.Serializer):
         attrs["administered_at"] = administered_at
         if not dose.is_prn:
             variance_seconds = (administered_at - dose.scheduled_at).total_seconds()
-            if abs(variance_seconds) > self.TIMING_WINDOW_MINUTES * 60:
+            timing_window = dose.medication.timing_window_minutes
+            if abs(variance_seconds) > timing_window * 60:
                 if not attrs.get("timing_reason", "").strip():
-                    raise serializers.ValidationError({"timing_reason": "A reason is required when a dose is administered outside the 30-minute time window."})
+                    raise serializers.ValidationError(
+                        {
+                            "timing_reason": f"A reason is required when a dose is administered outside the {timing_window}-minute time window."
+                        }
+                    )
                 if not attrs.get("timing_acknowledged"):
-                    raise serializers.ValidationError({"timing_acknowledged": "Acknowledge the early or late administration before recording the dose."})
+                    raise serializers.ValidationError(
+                        {"timing_acknowledged": "Acknowledge the early or late administration before recording the dose."}
+                    )
         medication = dose.medication
         zone = patient_timezone(medication.patient)
         today = timezone.localtime(administered_at, timezone=zone).date()
@@ -299,6 +321,7 @@ class AdministerDoseSerializer(serializers.Serializer):
             return dose
         if self.validated_data["expected_version"] != dose.version:
             raise VersionConflict(dose_state(dose))
+        medication = dose.medication
         user = self.context["request"].user
         dose.status = DoseLog.Status.GIVEN
         dose.administered_at = self.validated_data["administered_at"]
@@ -308,18 +331,23 @@ class AdministerDoseSerializer(serializers.Serializer):
         if dose.is_prn:
             # PRN orders have no scheduled administration time; retain the actual timestamp only.
             dose.timing_variance_minutes = 0
+            dose.timing_window_minutes = 0
             dose.late_minutes = 0
             dose.was_late = False
             dose.timing_status = DoseLog.TimingStatus.ON_TIME
             dose.timing_reason = ""
         else:
             variance_seconds = (dose.administered_at - dose.scheduled_at).total_seconds()
+            timing_window = medication.timing_window_minutes
             dose.timing_variance_minutes = int(variance_seconds / 60)
             dose.late_minutes = max(0, dose.timing_variance_minutes)
-            dose.was_late = dose.timing_variance_minutes > self.TIMING_WINDOW_MINUTES
+            dose.timing_window_minutes = timing_window
+            dose.was_late = dose.timing_variance_minutes > timing_window
             dose.timing_status = (
-                DoseLog.TimingStatus.EARLY if variance_seconds < -self.TIMING_WINDOW_MINUTES * 60
-                else DoseLog.TimingStatus.LATE if variance_seconds > self.TIMING_WINDOW_MINUTES * 60
+                DoseLog.TimingStatus.EARLY
+                if variance_seconds < -timing_window * 60
+                else DoseLog.TimingStatus.LATE
+                if variance_seconds > timing_window * 60
                 else DoseLog.TimingStatus.ON_TIME
             )
             dose.timing_reason = self.validated_data.get("timing_reason", "").strip()
@@ -343,6 +371,7 @@ class AdministerDoseSerializer(serializers.Serializer):
                 "late_minutes",
                 "timing_status",
                 "timing_variance_minutes",
+                "timing_window_minutes",
                 "timing_reason",
                 "updated_at",
             ]
@@ -358,7 +387,11 @@ class AdministerDoseSerializer(serializers.Serializer):
             instance=dose,
             summary=(
                 f"Administered {dose.medication.name} {dose.medication.dose:g} {dose.medication.unit}"
-                + (f" ({dose.timing_status.lower().replace('_', ' ')} by {abs(dose.timing_variance_minutes)} minutes)" if dose.timing_status != DoseLog.TimingStatus.ON_TIME else "")
+                + (
+                    f" ({dose.timing_status.lower().replace('_', ' ')} by {abs(dose.timing_variance_minutes)} minutes)"
+                    if dose.timing_status != DoseLog.TimingStatus.ON_TIME
+                    else ""
+                )
             ),
             metadata={
                 "route": dose.medication.route,
@@ -366,13 +399,39 @@ class AdministerDoseSerializer(serializers.Serializer):
                 "administered_at": dose.administered_at.isoformat(),
                 "timing_status": dose.timing_status,
                 "timing_variance_minutes": dose.timing_variance_minutes,
+                "timing_window_minutes": dose.timing_window_minutes,
                 "timing_reason": dose.timing_reason,
                 "note": dose.note,
             },
             client_reference=dose.client_reference,
         )
         resolve_source_alerts("dose_log", dose.id)
+        if dose.timing_status != DoseLog.TimingStatus.ON_TIME:
+            self._create_timing_exception_alerts(dose)
         return dose
+
+    def _create_timing_exception_alerts(self, dose):
+        medication = dose.medication
+        level = medication.timing_escalation_level
+        severity = CareNotification.Severity.CRITICAL if level >= 2 else CareNotification.Severity.WARNING
+        direction = "early" if dose.timing_status == DoseLog.TimingStatus.EARLY else "late"
+        assignments = CareAssignment.objects.filter(patient=medication.patient, active=True, user__is_active=True).select_related("user")
+        for assignment in assignments:
+            notification, _ = CareNotification.objects.get_or_create(
+                recipient=assignment.user,
+                kind=CareNotification.Kind.DOSE_TIMING_EXCEPTION,
+                source_type="dose_log",
+                source_id=str(dose.id),
+                defaults={
+                    "patient": medication.patient,
+                    "severity": severity,
+                    "title": f"Medication timing exception: {medication.name}",
+                    "message": f"The dose was recorded {abs(dose.timing_variance_minutes)} minutes {direction}, outside its {dose.timing_window_minutes}-minute window.",
+                    "escalation_level": level,
+                    "due_at": dose.administered_at,
+                },
+            )
+            queue_notification_deliveries(notification, policy=medication.timing_escalation_policy)
 
 
 class DoseOutcomeSerializer(serializers.Serializer):

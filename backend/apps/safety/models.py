@@ -32,6 +32,7 @@ class CareNotification(TimeStampedModel):
     class Kind(models.TextChoices):
         TASK_OVERDUE = "TASK_OVERDUE", "Task overdue"
         DOSE_OVERDUE = "DOSE_OVERDUE", "Medication overdue"
+        DOSE_TIMING_EXCEPTION = "DOSE_TIMING_EXCEPTION", "Medication timing exception"
         SYNC_CONFLICT = "SYNC_CONFLICT", "Sync conflict"
         VITAL_ALERT = "VITAL_ALERT", "Vital threshold alert"
         URGENT_MESSAGE = "URGENT_MESSAGE", "Urgent message"

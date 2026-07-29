@@ -104,13 +104,13 @@ def _inside_quiet_hours(preference, now):
     return start <= local_time < end if start < end else local_time >= start or local_time < end
 
 
-def queue_notification_deliveries(notification, now=None):
+def queue_notification_deliveries(notification, now=None, policy=None):
     now = now or timezone.now()
     preference, _ = NotificationPreference.objects.get_or_create(
         user=notification.recipient,
         defaults={"timezone": getattr(notification.recipient.organization, "timezone", "UTC") or "UTC"},
     )
-    policy = (
+    policy = policy or (
         EscalationPolicy.objects.filter(organization=notification.recipient.organization, active=True, is_default=True)
         .prefetch_related("steps")
         .first()

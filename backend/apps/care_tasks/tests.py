@@ -12,7 +12,7 @@ from apps.medications.models import DoseLog, Medication, MedicationSchedule
 from apps.medications.services import generate_dose_logs_for_date
 from apps.patients.models import CareAssignment, Patient
 from apps.reports.models import ShiftReport
-from apps.safety.models import AuditEvent, CareNotification
+from apps.safety.models import AuditEvent, CareNotification, EscalationPolicy, EscalationStep, NotificationDelivery
 from apps.safety.services import scan_overdue_alerts
 
 from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
@@ -530,6 +530,48 @@ class CareApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["timing_status"], DoseLog.TimingStatus.EARLY)
         self.assertLess(response.data["timing_variance_minutes"], -30)
+
+    def test_medication_timing_policy_controls_window_and_escalates_exception(self):
+        policy = EscalationPolicy.objects.create(organization=self.organization, name="High-risk timing", active=True)
+        EscalationStep.objects.create(policy=policy, level=2, channel=EscalationStep.Channel.IN_APP)
+        medication = Medication.objects.create(
+            patient=self.patient,
+            name="Warfarin",
+            dose=2,
+            unit="mg",
+            route="Oral",
+            timing_window_minutes=15,
+            timing_escalation_level=2,
+            timing_escalation_policy=policy,
+        )
+        dose = DoseLog.objects.create(
+            medication=medication,
+            scheduled_at=timezone.now() - timedelta(minutes=45),
+            timing_window_minutes=15,
+        )
+        self.authenticate()
+        response = self.client.post(
+            f"/api/v1/dose-logs/{dose.id}/administer/",
+            {
+                "expected_version": 1,
+                "administered_at": timezone.now().isoformat(),
+                "timing_reason": "Clinical review delayed the dose.",
+                "timing_acknowledged": True,
+                "verified_patient": True,
+                "verified_medication": True,
+                "verified_dose": True,
+                "verified_route": True,
+                "verified_time": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["timing_window_minutes"], 15)
+        self.assertEqual(response.data["timing_status"], DoseLog.TimingStatus.LATE)
+        alert = CareNotification.objects.get(kind=CareNotification.Kind.DOSE_TIMING_EXCEPTION, source_id=str(dose.id))
+        self.assertEqual(alert.escalation_level, 2)
+        self.assertEqual(alert.severity, CareNotification.Severity.CRITICAL)
+        self.assertTrue(NotificationDelivery.objects.filter(notification=alert, channel=EscalationStep.Channel.IN_APP).exists())
 
     def test_overdue_care_creates_and_escalates_notification(self):
         self.occurrence.scheduled_at = timezone.now() - timedelta(hours=3)

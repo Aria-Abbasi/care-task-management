@@ -150,6 +150,9 @@ export type Medication = {
   is_prn: boolean
   prn_reason: string
   max_daily_doses: number | null
+  timing_window_minutes: number
+  timing_escalation_level: number
+  timing_escalation_policy: number | null
   starts_on: string | null
   ends_on: string | null
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -182,6 +185,7 @@ export type DoseLog = {
   late_minutes: number
   timing_status: 'ON_TIME' | 'EARLY' | 'LATE'
   timing_variance_minutes: number
+  timing_window_minutes: number
   timing_reason: string
   is_prn: boolean
   corrections: DoseCorrection[]
