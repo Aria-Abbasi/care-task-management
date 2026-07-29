@@ -44,6 +44,6 @@ jobs:
       - run: npm run lint && npm test && npm run build
       - run: npm --prefix e2e install
       - run: npm --prefix e2e exec -- playwright install --with-deps chromium
-      - run: npm --prefix e2e test -- --project=desktop-chromium
+      - run: PLAYWRIGHT_TABLET_BROWSER=chromium npm --prefix e2e test -- --project=desktop-chromium --project=caregiver-tablet
       - run: docker compose config
       - run: docker compose up -d db && ./scripts/backup-restore-drill.sh
