@@ -1,6 +1,6 @@
 /* Generated contract facade from docs/openapi.yaml. Regenerate when the API schema changes. */
 export type ApiPath =
-  | '/auth/login/' | '/auth/logout/' | '/auth/rotate/' | '/auth/password-reset/' | '/auth/password-reset/confirm/' | '/patients/'
+  | '/auth/login/' | '/auth/logout/' | '/auth/rotate/' | '/auth/password-reset/' | '/auth/password-reset/confirm/' | '/auth/change-password/' | '/patients/'
   | '/assignments/' | '/tasks/' | '/task-templates/' | '/vitals/' | '/medications/' | '/refill-requests/' | '/stock-adjustments/'
   | `/patients/${number}/dashboard/` | `/occurrences/${number}/complete/`
   | `/occurrences/${number}/correct/` | `/occurrences/${number}/delay/` | `/occurrences/${number}/skip/` | `/dose-logs/${number}/administer/`

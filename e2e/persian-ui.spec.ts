@@ -83,3 +83,14 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await expect(sidebarAccountMenu).toBeHidden()
   await page.screenshot({ path: testInfo.outputPath('english-safety.png'), fullPage: true, animations: 'disabled' })
 })
+
+test('settings provides QR MFA enrollment and signed-in password change', async ({ page }) => {
+  await signIn(page)
+  await page.goto('/app/settings')
+  await expect(page.getByRole('button', { name: 'Change password' })).toBeVisible()
+  await expect(page.getByLabel('Current password')).toBeVisible()
+  await expect(page.getByLabel('New password', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Set up authenticator MFA' }).click()
+  await expect(page.getByRole('img', { name: 'Scan this QR code with your authenticator app' })).toBeVisible()
+  await expect(page.getByLabel('Six-digit verification code')).toBeVisible()
+})

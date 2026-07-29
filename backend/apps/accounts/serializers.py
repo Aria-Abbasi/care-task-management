@@ -110,3 +110,20 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         password_validation.validate_password(value)
         return value
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(trim_whitespace=False)
+    new_password = serializers.CharField(min_length=8, trim_whitespace=False)
+    confirm_password = serializers.CharField(trim_whitespace=False)
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        if not user.check_password(attrs["current_password"]):
+            raise serializers.ValidationError({"current_password": "Your current password is incorrect."})
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "The new passwords do not match."})
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError({"new_password": "Choose a password that is different from your current password."})
+        password_validation.validate_password(attrs["new_password"], user)
+        return attrs

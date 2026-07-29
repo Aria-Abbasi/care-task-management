@@ -83,6 +83,7 @@ class ProductionFeatureTests(APITestCase):
             "/api/v1/shift-assignments/1/check_in/",
             "/api/v1/push-subscriptions/",
             "/api/v1/mfa/disable/",
+            "/api/v1/auth/change-password/",
             "/api/v1/sessions/1/revoke/",
         ]
         for path in paths:
@@ -103,6 +104,7 @@ class ProductionFeatureTests(APITestCase):
     def test_mfa_is_required_after_confirmation(self):
         self.authenticate()
         setup = self.client.post("/api/v1/mfa/setup/", {}, format="json")
+        self.assertTrue(setup.data["qr_code_data_url"].startswith("data:image/png;base64,"))
         code = totp_code(setup.data["secret"])
         self.assertEqual(self.client.post("/api/v1/mfa/confirm/", {"code": code}, format="json").status_code, 200)
         self.client.force_authenticate(user=None)
@@ -114,6 +116,31 @@ class ProductionFeatureTests(APITestCase):
         )
         self.assertEqual(rejected.status_code, 400)
         self.assertEqual(accepted.status_code, 200)
+
+    def test_signed_in_password_change_preserves_current_session_and_revokes_others(self):
+        login = self.client.post("/api/v1/auth/login/", {"login": self.user.email, "password": "Strong-pass-123"}, format="json")
+        current_token = login.data["token"]
+        _, other_session = SessionToken.issue(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {current_token}")
+        response = self.client.post(
+            "/api/v1/auth/change-password/",
+            {"current_password": "Strong-pass-123", "new_password": "Different-pass-456", "confirm_password": "Different-pass-456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(SessionToken.objects.get(key_hash=SessionToken.digest(current_token)).active)
+        self.assertFalse(SessionToken.objects.get(pk=other_session.pk).active)
+        self.client.credentials()
+        self.assertEqual(
+            self.client.post("/api/v1/auth/login/", {"login": self.user.email, "password": "Strong-pass-123"}, format="json").status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/v1/auth/login/", {"login": self.user.email, "password": "Different-pass-456"}, format="json"
+            ).status_code,
+            200,
+        )
 
     def test_organization_and_assignment_isolate_patient_data(self):
         self.authenticate()

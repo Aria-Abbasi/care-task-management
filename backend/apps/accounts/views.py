@@ -1,6 +1,9 @@
 import hashlib
+from base64 import b64encode
 from datetime import timedelta
+from io import BytesIO
 
+import qrcode
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -22,6 +25,7 @@ from .security import generate_totp_secret, totp_uri, verify_totp
 from .serializers import (
     LoginSerializer,
     OrganizationSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     SessionTokenSerializer,
@@ -135,6 +139,19 @@ class PasswordResetConfirmView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class PasswordChangeView(APIView):
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        sessions = request.user.session_tokens.filter(revoked_at__isnull=True)
+        if isinstance(request.auth, SessionToken):
+            sessions = sessions.exclude(pk=request.auth.pk)
+        sessions.update(revoked_at=timezone.now())
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class MfaViewSet(viewsets.ViewSet):
     def list(self, request):
         return Response({"enabled": request.user.mfa_enabled})
@@ -145,7 +162,13 @@ class MfaViewSet(viewsets.ViewSet):
         request.user.mfa_secret = secret
         request.user.mfa_enabled = False
         request.user.save(update_fields=["mfa_secret", "mfa_enabled"])
-        return Response({"secret": secret, "otpauth_uri": totp_uri(secret, request.user.email or request.user.username)})
+        uri = totp_uri(secret, request.user.email or request.user.username)
+        image = qrcode.make(uri)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return Response(
+            {"secret": secret, "otpauth_uri": uri, "qr_code_data_url": f"data:image/png;base64,{b64encode(buffer.getvalue()).decode()}"}
+        )
 
     @action(detail=False, methods=["post"])
     def confirm(self, request):

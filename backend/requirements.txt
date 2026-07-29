@@ -8,5 +8,6 @@ celery==5.5.3
 redis==6.2.0
 gunicorn==23.0.0
 Pillow==11.3.0
+qrcode[pil]==8.2
 pywebpush==2.0.3
 sentry-sdk==2.33.0
