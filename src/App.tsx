@@ -6,7 +6,7 @@ import {
   ShieldCheck, Sparkles, Stethoscope, Sun, Thermometer,
   X, Pill, Footprints, Utensils, FileText, Cloud, CloudOff, RefreshCw,
   History, RotateCcw, Save, TriangleAlert,
-  UserRound,
+  UserRound, LogOut,
 } from 'lucide-react'
 import {
   ApiError,
@@ -191,6 +191,8 @@ function App() {
   const [selectedDose, setSelectedDose] = useState<DoseLog | null>(null)
   const [selectedPrn, setSelectedPrn] = useState<Medication | null>(null)
   const [patientMenu, setPatientMenu] = useState(false)
+  const [profileMenu, setProfileMenu] = useState(false)
+  const [sidebarProfileMenu, setSidebarProfileMenu] = useState(false)
   const [notifications, setNotifications] = useState<CareNotification[]>([])
   const [notificationPanel, setNotificationPanel] = useState(false)
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
@@ -685,6 +687,8 @@ function App() {
     searchLabel: 'جستجوی فضای کاری مراقبت', searchEyebrow: 'جستجوی سراسری', searchTitle: 'یافتن اطلاعات مراقبت',
     searchPlaceholder: 'جستجوی وظایف و بخش‌های فضای کاری', workspaceSection: 'بخش فضای کاری',
     syncAnnouncement: 'در حال همگام‌سازی پرونده‌های مراقبتی', pendingAnnouncement: `${pendingSync} تغییر نیاز به همگام‌سازی دارد`, syncedAnnouncement: 'پرونده‌های مراقبتی همگام هستند',
+    account: 'حساب کاربری', settings: 'تنظیمات فضای کاری', switchPatient: 'تغییر فرد تحت مراقبت', signOut: 'خروج از حساب', protectedSignOut: 'ابتدا تغییرات آفلاین را همگام‌سازی کنید',
+    role: { CAREGIVER: 'مراقب', DOCTOR: 'پزشک', FAMILY: 'خانواده', ADMIN: 'مدیر' },
   } : {
     skip: 'Skip to care workspace', closeMenu: 'Close menu', openMenu: 'Open menu',
     assigned: `${patients.length} assigned ${patients.length === 1 ? 'person' : 'people'}`, selectPatient: 'Select person receiving care',
@@ -696,6 +700,8 @@ function App() {
     searchLabel: 'Search care workspace', searchEyebrow: 'GLOBAL SEARCH', searchTitle: 'Find care information',
     searchPlaceholder: 'Search tasks and workspace sections', workspaceSection: 'Workspace section',
     syncAnnouncement: 'Synchronizing care records', pendingAnnouncement: `${pendingSync} changes need synchronization`, syncedAnnouncement: 'Care records synchronized',
+    account: 'Account', settings: 'Workspace settings', switchPatient: 'Switch person receiving care', signOut: 'Sign out', protectedSignOut: 'Sync offline changes before signing out',
+    role: { CAREGIVER: 'Caregiver', DOCTOR: 'Clinician', FAMILY: 'Family member', ADMIN: 'Administrator' },
   }
   const roleContext = user.role === 'CAREGIVER'
     ? (isPersian ? ['فضای کاری مراقب', 'مراقبت‌های سررسید و ثبت سریع'] : ['Caregiver workspace', 'Due care and rapid recording'])
@@ -739,11 +745,7 @@ function App() {
           ))}
         </nav>
         <ShiftCard shifts={currentShifts} userId={user.id} locale={locale} />
-        <button className="profile-row" onClick={() => navigate('settings')}>
-          <div className="avatar avatar-sarah">{initials(user.display_name)}</div>
-          <div><strong>{user.display_name}</strong><span>{user.role.toLowerCase()}</span></div>
-          <MoreHorizontal size={19} />
-        </button>
+        <div className="sidebar-profile"><button className="profile-row" onClick={() => navigate('settings')}><div className="avatar avatar-sarah">{initials(user.display_name)}</div><div><strong>{user.display_name}</strong><span>{shellCopy.role[user.role]}</span></div></button><button className={`sidebar-profile-more ${sidebarProfileMenu ? 'open' : ''}`} onClick={() => setSidebarProfileMenu((current) => !current)} aria-label={shellCopy.more} aria-expanded={sidebarProfileMenu} aria-haspopup="menu"><MoreHorizontal size={19} /></button>{sidebarProfileMenu && <div className="sidebar-account-menu" role="menu"><div className="sidebar-account-head"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><button role="menuitem" onClick={() => { navigate('settings'); setSidebarProfileMenu(false); setMobileMenu(false) }}><Settings /><span>{shellCopy.settings}</span></button><button role="menuitem" onClick={() => { setPatientMenu(true); setSidebarProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span></button><button className="sidebar-signout" role="menuitem" onClick={() => { setSidebarProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
       </aside>
 
       {mobileMenu && <button className="backdrop" onClick={() => setMobileMenu(false)} aria-label={shellCopy.closeMenu} />}
@@ -761,7 +763,7 @@ function App() {
             </button>
             <button className="icon-button search-button" aria-label={shellCopy.search} onClick={() => setSearchOpen(true)}><Search size={19} /></button>
             <button className="icon-button notification-button" onClick={() => { setNotificationPanel(!notificationPanel); loadNotifications().catch(() => undefined) }} aria-label={shellCopy.unread(notifications.filter((item) => item.state === 'UNREAD').length)} aria-expanded={notificationPanel}><Bell size={19} />{notifications.some((item) => item.state === 'UNREAD') && <i />}</button>
-            <div className="avatar avatar-sarah top-avatar">{initials(user.display_name)}</div>
+            <div className="top-profile"><button className={`top-profile-trigger ${profileMenu ? 'open' : ''}`} onClick={() => setProfileMenu((current) => !current)} aria-label={shellCopy.account} aria-expanded={profileMenu} aria-haspopup="menu"><span className="avatar avatar-sarah top-avatar">{initials(user.display_name)}</span></button>{profileMenu && <div className="top-profile-menu" role="menu"><div className="top-profile-summary"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><div className={`profile-sync-state ${online ? 'online' : 'offline'}`}>{online ? <Cloud /> : <CloudOff />}<span>{syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending : shellCopy.synced}</span></div><div className="top-profile-links"><button role="menuitem" onClick={() => { navigate('settings'); setProfileMenu(false) }}><Settings /><span>{shellCopy.settings}</span><ChevronRight /></button><button role="menuitem" onClick={() => { setPatientMenu(true); setProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span><ChevronRight /></button></div><button className="top-profile-signout" role="menuitem" onClick={() => { setProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
           </div>
         </header>
 
