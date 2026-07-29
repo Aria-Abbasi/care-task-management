@@ -210,6 +210,8 @@ function App() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const topProfileRef = useRef<HTMLDivElement>(null)
+  const sidebarProfileRef = useRef<HTMLDivElement>(null)
 
   const notify = useCallback((message: string) => {
     setToast(message)
@@ -276,6 +278,41 @@ function App() {
     document.documentElement.dir = locale === 'fa' ? 'rtl' : 'ltr'
     localStorage.setItem('haven.locale', locale)
   }, [locale])
+
+  useEffect(() => {
+    if (!profileMenu && !sidebarProfileMenu) return
+    const closeFromOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (profileMenu && !topProfileRef.current?.contains(target)) setProfileMenu(false)
+      if (sidebarProfileMenu && !sidebarProfileRef.current?.contains(target)) setSidebarProfileMenu(false)
+    }
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (profileMenu) {
+        event.preventDefault()
+        setProfileMenu(false)
+        topProfileRef.current?.querySelector<HTMLButtonElement>('.top-profile-trigger')?.focus()
+      }
+      if (sidebarProfileMenu) {
+        event.preventDefault()
+        setSidebarProfileMenu(false)
+        sidebarProfileRef.current?.querySelector<HTMLButtonElement>('.sidebar-profile-more')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeFromOutside)
+    document.addEventListener('keydown', closeFromKeyboard)
+    return () => {
+      document.removeEventListener('pointerdown', closeFromOutside)
+      document.removeEventListener('keydown', closeFromKeyboard)
+    }
+  }, [profileMenu, sidebarProfileMenu])
+
+  useEffect(() => {
+    const menu = profileMenu ? topProfileRef.current : sidebarProfileMenu ? sidebarProfileRef.current : null
+    if (!menu) return
+    const frame = window.requestAnimationFrame(() => menu.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [profileMenu, sidebarProfileMenu])
 
   const updatePendingCount = useCallback(async () => {
     setPendingSync(session ? await pendingMutationCount(session.user.id).catch(() => 0) : 0)
@@ -745,7 +782,7 @@ function App() {
           ))}
         </nav>
         <ShiftCard shifts={currentShifts} userId={user.id} locale={locale} />
-        <div className="sidebar-profile"><button className="profile-row" onClick={() => navigate('settings')}><div className="avatar avatar-sarah">{initials(user.display_name)}</div><div><strong>{user.display_name}</strong><span>{shellCopy.role[user.role]}</span></div></button><button className={`sidebar-profile-more ${sidebarProfileMenu ? 'open' : ''}`} onClick={() => setSidebarProfileMenu((current) => !current)} aria-label={shellCopy.more} aria-expanded={sidebarProfileMenu} aria-haspopup="menu"><MoreHorizontal size={19} /></button>{sidebarProfileMenu && <div className="sidebar-account-menu" role="menu"><div className="sidebar-account-head"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><button role="menuitem" onClick={() => { navigate('settings'); setSidebarProfileMenu(false); setMobileMenu(false) }}><Settings /><span>{shellCopy.settings}</span></button><button role="menuitem" onClick={() => { setPatientMenu(true); setSidebarProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span></button><button className="sidebar-signout" role="menuitem" onClick={() => { setSidebarProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
+        <div className="sidebar-profile" ref={sidebarProfileRef}><button className="profile-row" onClick={() => navigate('settings')}><div className="avatar avatar-sarah">{initials(user.display_name)}</div><div><strong>{user.display_name}</strong><span>{shellCopy.role[user.role]}</span></div></button><button className={`sidebar-profile-more ${sidebarProfileMenu ? 'open' : ''}`} onClick={() => { setSidebarProfileMenu((current) => !current); setProfileMenu(false) }} aria-label={shellCopy.more} aria-expanded={sidebarProfileMenu} aria-haspopup="menu" aria-controls="sidebar-account-menu"><MoreHorizontal size={19} /></button>{sidebarProfileMenu && <div id="sidebar-account-menu" className="sidebar-account-menu" role="menu"><div className="sidebar-account-head"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><button role="menuitem" onClick={() => { navigate('settings'); setSidebarProfileMenu(false); setMobileMenu(false) }}><Settings /><span>{shellCopy.settings}</span></button><button role="menuitem" onClick={() => { setPatientMenu(true); setSidebarProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span></button><button className="sidebar-signout" role="menuitem" onClick={() => { setSidebarProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
       </aside>
 
       {mobileMenu && <button className="backdrop" onClick={() => setMobileMenu(false)} aria-label={shellCopy.closeMenu} />}
@@ -763,7 +800,7 @@ function App() {
             </button>
             <button className="icon-button search-button" aria-label={shellCopy.search} onClick={() => setSearchOpen(true)}><Search size={19} /></button>
             <button className="icon-button notification-button" onClick={() => { setNotificationPanel(!notificationPanel); loadNotifications().catch(() => undefined) }} aria-label={shellCopy.unread(notifications.filter((item) => item.state === 'UNREAD').length)} aria-expanded={notificationPanel}><Bell size={19} />{notifications.some((item) => item.state === 'UNREAD') && <i />}</button>
-            <div className="top-profile"><button className={`top-profile-trigger ${profileMenu ? 'open' : ''}`} onClick={() => setProfileMenu((current) => !current)} aria-label={shellCopy.account} aria-expanded={profileMenu} aria-haspopup="menu"><span className="avatar avatar-sarah top-avatar">{initials(user.display_name)}</span></button>{profileMenu && <div className="top-profile-menu" role="menu"><div className="top-profile-summary"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><div className={`profile-sync-state ${online ? 'online' : 'offline'}`}>{online ? <Cloud /> : <CloudOff />}<span>{syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending : shellCopy.synced}</span></div><div className="top-profile-links"><button role="menuitem" onClick={() => { navigate('settings'); setProfileMenu(false) }}><Settings /><span>{shellCopy.settings}</span><ChevronRight /></button><button role="menuitem" onClick={() => { setPatientMenu(true); setProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span><ChevronRight /></button></div><button className="top-profile-signout" role="menuitem" onClick={() => { setProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
+            <div className="top-profile" ref={topProfileRef}><button className={`top-profile-trigger ${profileMenu ? 'open' : ''}`} onClick={() => { setProfileMenu((current) => !current); setSidebarProfileMenu(false) }} aria-label={shellCopy.account} aria-expanded={profileMenu} aria-haspopup="menu" aria-controls="top-account-menu"><span className="avatar avatar-sarah top-avatar">{initials(user.display_name)}</span></button>{profileMenu && <div id="top-account-menu" className="top-profile-menu" role="menu"><div className="top-profile-summary"><span className="avatar avatar-sarah">{initials(user.display_name)}</span><span><small>{shellCopy.account}</small><strong>{user.display_name}</strong><b>{shellCopy.role[user.role]}</b></span></div><div className={`profile-sync-state ${online ? 'online' : 'offline'}`}>{online ? <Cloud /> : <CloudOff />}<span>{syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending : shellCopy.synced}</span></div><div className="top-profile-links"><button role="menuitem" onClick={() => { navigate('settings'); setProfileMenu(false) }}><Settings /><span>{shellCopy.settings}</span><ChevronRight /></button><button role="menuitem" onClick={() => { setPatientMenu(true); setProfileMenu(false) }}><UserRound /><span>{shellCopy.switchPatient}</span><ChevronRight /></button></div><button className="top-profile-signout" role="menuitem" onClick={() => { setProfileMenu(false); signOut() }} disabled={!online && pendingSync > 0} title={!online && pendingSync > 0 ? shellCopy.protectedSignOut : undefined}><LogOut /><span>{shellCopy.signOut}</span></button></div>}</div>
           </div>
         </header>
 
