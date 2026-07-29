@@ -752,7 +752,7 @@ function App() {
             {view === 'health' && <HealthView session={session} patient={patient} latest={dashboard.latest_vitals} onRecord={() => setShowVital(true)} canRecord={user.role !== 'FAMILY'} locale={locale} />}
             {view === 'timeline' && <TimelineView session={session} patient={patient} dashboard={dashboard} locale={locale} />}
             {view === 'clinical' && <ClinicalProfileView session={session} patient={patient} locale={locale} />}
-            {view === 'admin' && <AdminView session={session} notify={notify} />}
+            {view === 'admin' && <AdminView session={session} notify={notify} locale={locale} />}
             {view === 'tasks' && <TaskManagementView session={session} patient={patient} onAdd={() => setShowAddTask(true)} notify={notify} locale={locale} />}
             {view === 'reports' && <ReportsView session={session} patient={patient} taskCount={tasks.filter((task) => task.status === 'done').length} vitalCount={dashboard.latest_vitals.length} onSend={sendReport} notify={notify} canAuthor={user.role !== 'FAMILY'} locale={locale} />}
             {view === 'messages' && <MessagesView session={session} patient={patient} notify={notify} locale={locale} />}
