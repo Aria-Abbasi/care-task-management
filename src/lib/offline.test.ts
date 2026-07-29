@@ -112,7 +112,7 @@ describe('offline care queue', () => {
       path: '/occurrences/1/complete/',
       method: 'POST',
       body: { outcome: 'COMPLETED', expected_version: 1 },
-      createdAt: '2026-07-16T10:00:00Z',
+      createdAt: new Date().toISOString(),
       attempts: 0,
       status: 'pending',
     })

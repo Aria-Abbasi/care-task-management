@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { signIn } from './helpers'
+import { openNavigation, signIn } from './helpers'
 
 test('switching patients changes all visible identity context', async ({ page }) => {
   await signIn(page)
+  await openNavigation(page)
   await page.getByRole('button', { name: /Hassan Abbasi/i }).first().click()
   await page.getByRole('option', { name: /Maryam Abbasi/i }).click()
   await expect(page.getByRole('heading', { name: 'Maryam Abbasi' })).toBeVisible()
@@ -11,11 +12,13 @@ test('switching patients changes all visible identity context', async ({ page })
 
 test('medication administration requires all five rights', async ({ page }) => {
   await signIn(page)
+  await openNavigation(page)
   await page.getByRole('button', { name: 'Medications' }).first().click()
   const dose = page.locator('.dose-row').first()
   if (await dose.count()) {
     await dose.click()
     await expect(page.getByText('Confirm before administration')).toBeVisible()
+    await expect(page.getByLabel('Actual administration time')).toBeVisible()
     await page.getByRole('button', { name: /Record dose outcome/ }).click()
     await expect(page.getByText(/Confirm all five medication checks/)).toBeVisible()
   }

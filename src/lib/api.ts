@@ -1,8 +1,10 @@
 import { listMutations, queueMutation, removeMutation, updateMutation, type QueuedMutation } from './offline'
-import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, Message, NotificationDelivery, NotificationPreference, Paginated, Patient, Session, ShiftAssignment, ShiftReport, TaskTemplate, VitalRecord } from './types'
+import { createContractTransport, type ApiPath } from './generated-api'
+import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, WoundRecord } from './types'
 
 const API_ROOT = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 const SESSION_KEY = 'haven.session'
+const contractTransport = createContractTransport(API_ROOT)
 
 export class ApiError extends Error {
   status: number
@@ -26,18 +28,10 @@ function errorMessage(details: unknown, fallback: string) {
   return fallback
 }
 
-export async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+export async function request<T>(path: ApiPath, options: RequestInit = {}, token?: string): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
-      ...options,
-      headers: {
-        Accept: 'application/json',
-        ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Token ${token}` } : {}),
-        ...options.headers,
-      },
-    })
+    response = await contractTransport(path, options, token)
   } catch {
     throw new ApiError('The care server is unreachable.', 0)
   }
@@ -114,6 +108,10 @@ export async function getPatients(token: string): Promise<Patient[]> {
   return (await request<Paginated<Patient>>('/patients/?ordering=first_name,last_name', {}, token)).results
 }
 
+export async function getCareAssignments(token: string, patientId: number): Promise<CareAssignment[]> {
+  return (await request<Paginated<CareAssignment>>(`/assignments/?patient=${patientId}&active=true`, {}, token)).results
+}
+
 export async function getPatientDashboard(token: string, patientId: number, date?: string): Promise<DashboardResponse> {
   return request<DashboardResponse>(`/patients/${patientId}/dashboard/${date ? `?date=${date}` : ''}`, {}, token)
 }
@@ -121,38 +119,58 @@ export async function getPatientDashboard(token: string, patientId: number, date
 export const getVitals = async (token: string, patientId: number) => (await request<Paginated<VitalRecord>>(`/vitals/?patient=${patientId}&ordering=recorded_at`, {}, token)).results
 export const getConversations = async (token: string, patientId: number) => (await request<Paginated<Conversation>>(`/conversations/?patient=${patientId}`, {}, token)).results
 export const getMessages = async (token: string, conversationId: number) => (await request<Paginated<Message>>(`/messages/?conversation=${conversationId}&ordering=created_at`, {}, token)).results
-export async function sendMessage(token: string, conversation: number, body: string, urgent: boolean, clinical: boolean, attachment?: File | null, voiceNote?: Blob | null) {
+export async function sendMessage(token: string, conversation: number, body: string, urgent: boolean, clinical: boolean, attachment?: File | null, voiceNote?: Blob | null, mentions: number[] = []) {
   if (attachment || voiceNote) {
     const form = new FormData()
-    form.append('conversation', String(conversation)); form.append('body', body); form.append('urgent', String(urgent)); form.append('clinical', String(clinical)); form.append('client_reference', crypto.randomUUID())
+    form.append('conversation', String(conversation)); form.append('body', body); form.append('urgent', String(urgent)); form.append('clinical', String(clinical)); form.append('client_reference', crypto.randomUUID()); mentions.forEach((id) => form.append('mentions', String(id)))
     if (attachment) form.append('attachment_upload', attachment)
     if (voiceNote) form.append('voice_note_upload', voiceNote, `voice-${Date.now()}.webm`)
     return request<Message>('/messages/', { method: 'POST', body: form }, token)
   }
-  return request<Message>('/messages/', { method: 'POST', body: JSON.stringify({ conversation, body, urgent, clinical, client_reference: crypto.randomUUID() }) }, token)
+  return request<Message>('/messages/', { method: 'POST', body: JSON.stringify({ conversation, body, urgent, clinical, mentions, client_reference: crypto.randomUUID() }) }, token)
 }
+export const createConversation = async (token: string, payload: Record<string, unknown>) => request<Conversation>('/conversations/', { method: 'POST', body: JSON.stringify(payload) }, token)
+export const updateConversation = async (token: string, id: number, payload: Record<string, unknown>) => request<Conversation>(`/conversations/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+export const editMessage = async (token: string, id: number, body: string) => request<Message>(`/messages/${id}/`, { method: 'PATCH', body: JSON.stringify({ body }) }, token)
+export const downloadClinicalDocument = (token: string, documentId: number) => downloadSecureFile(`/api/v1/clinical-documents/${documentId}/download/`, token)
+export const downloadTaskCompletionPhoto = (token: string, occurrenceId: number) => downloadSecureFile(`/api/v1/occurrences/${occurrenceId}/completion-photo/`, token)
 export const markMessageRead = async (token: string, messageId: number) => request(`/messages/${messageId}/read/`, { method: 'POST' }, token)
 export const getReports = async (token: string, patientId: number) => (await request<Paginated<ShiftReport>>(`/shift-reports/?patient=${patientId}&ordering=-created_at`, {}, token)).results
 export const acknowledgeReport = async (token: string, id: number) => request<ShiftReport>(`/shift-reports/${id}/acknowledge/`, { method: 'POST' }, token)
 export const getShifts = async (token: string, patientId: number) => (await request<Paginated<ShiftAssignment>>(`/shift-assignments/?patient=${patientId}&ordering=starts_at`, {}, token)).results
+export const getCalendar = async (token: string, patientId: number, start: string, end: string) => request<CalendarData>(`/patients/${patientId}/calendar/?start=${start}&end=${end}` as ApiPath, {}, token)
 export async function getClinicalProfile(token: string, patientId: number) {
-  const paths = ['allergies', 'diagnoses', 'care-plans', 'emergency-contacts', 'advance-directives', 'clinical-documents']
-  const [allergies, diagnoses, carePlans, contacts, directives, documents] = await Promise.all(paths.map((path) => request<Paginated<unknown>>(`/${path}/?patient=${patientId}`, {}, token).then((result) => result.results)))
-  return { allergies: allergies as Allergy[], diagnoses: diagnoses as Diagnosis[], carePlans: carePlans as CarePlan[], contacts: contacts as EmergencyContact[], directives: directives as AdvanceDirective[], documents: documents as ClinicalDocument[] }
+  const paths = ['allergies', 'diagnoses', 'care-plans', 'emergency-contacts', 'advance-directives', 'clinical-documents', 'wound-records', 'vital-thresholds']
+  const [allergies, diagnoses, carePlans, contacts, directives, documents, wounds, thresholds] = await Promise.all(paths.map((path) => request<Paginated<unknown>>(`/${path}/?patient=${patientId}`, {}, token).then((result) => result.results)))
+  return { allergies: allergies as Allergy[], diagnoses: diagnoses as Diagnosis[], carePlans: carePlans as CarePlan[], contacts: contacts as EmergencyContact[], directives: directives as AdvanceDirective[], documents: documents as ClinicalDocument[], wounds: wounds as WoundRecord[], thresholds: thresholds as VitalThreshold[] }
 }
+export const saveClinicalRecord = async <T>(token: string, path: string, id: number | null, payload: Record<string, unknown>) => request<T>(`/${path}/${id ? `${id}/` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }, token)
 export const lookupMedicationBarcode = async (token: string, code: string) => request<import('./types').Medication>(`/medications/barcode/?code=${encodeURIComponent(code)}`, {}, token)
 export const requestRefill = async (token: string, medication: number, quantity: number, note: string) => request('/refill-requests/', { method: 'POST', body: JSON.stringify({ medication, quantity, note }) }, token)
-export const administerPrn = async (token: string, medicationId: number, note: string) => request(`/medications/${medicationId}/prn-dose/`, { method: 'POST', body: JSON.stringify({ note, verified_patient: true, verified_medication: true, verified_dose: true, verified_route: true, verified_time: true }) }, token)
+export const getRefillRequests = async (token: string) => (await request<Paginated<RefillRequest>>('/refill-requests/?ordering=-created_at', {}, token)).results
+export const resolveRefillRequest = async (token: string, id: number, status: RefillRequest['status']) => request<RefillRequest>(`/refill-requests/${id}/resolve/`, { method: 'POST', body: JSON.stringify({ status }) }, token)
+export const adjustMedicationStock = async (token: string, medication: number, quantityDelta: number, reason: string) => request('/stock-adjustments/', { method: 'POST', body: JSON.stringify({ medication, quantity_delta: quantityDelta, reason }) }, token)
+export const saveMedicationOrder = async (token: string, id: number | null, payload: Record<string, unknown>) => request<Medication>(`/medications/${id ? `${id}/` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }, token)
+export const administerPrn = async (token: string, medicationId: number, payload: Record<string, unknown>) => request(`/medications/${medicationId}/prn-dose/`, { method: 'POST', body: JSON.stringify(payload) }, token)
 export const reviewMedicationOrder = async (token: string, medicationId: number, decision: 'approve' | 'reject', reason = '') => request(`/medications/${medicationId}/${decision}/`, { method: 'POST', body: JSON.stringify({ reason }) }, token)
 export async function getAdminOverview(token: string) {
-  const [users, policies, deliveries, availability] = await Promise.all([
+  const [users, policies, deliveries, availability, organizations, patients, assignments, shifts, steps, interactions, taskTemplates] = await Promise.all([
     request<Paginated<ApiUser>>('/users/?ordering=first_name,last_name', {}, token),
     request<Paginated<EscalationPolicy>>('/escalation-policies/', {}, token),
     request<Paginated<NotificationDelivery>>('/notification-deliveries/?ordering=-created_at', {}, token),
     request<Paginated<CaregiverAvailability>>('/caregiver-availability/?ordering=starts_at', {}, token),
+    request<Paginated<Organization>>('/organizations/', {}, token),
+    request<Paginated<Patient>>('/patients/?ordering=first_name,last_name', {}, token),
+    request<Paginated<CareAssignment>>('/assignments/', {}, token),
+    request<Paginated<ShiftAssignment>>('/shift-assignments/?ordering=starts_at', {}, token),
+    request<Paginated<Record<string, unknown>>>('/escalation-steps/', {}, token),
+    request<Paginated<Record<string, unknown>>>('/medication-interactions/', {}, token),
+    request<Paginated<OrganizationTaskTemplate>>('/task-templates/', {}, token),
   ])
-  return { users: users.results, policies: policies.results, deliveries: deliveries.results, availability: availability.results }
+  return { users: users.results, policies: policies.results, deliveries: deliveries.results, availability: availability.results, organizations: organizations.results, patients: patients.results, assignments: assignments.results, shifts: shifts.results, steps: steps.results, interactions: interactions.results, taskTemplates: taskTemplates.results }
 }
+export const adminSaveResource = async <T>(token: string, path: string, id: number | null, payload: Record<string, unknown>) => request<T>(`/${path}/${id ? `${id}/` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }, token)
+export const adminDeactivateResource = async (token: string, path: string, id: number) => request<void>(`/${path}/${id}/`, { method: 'DELETE' }, token)
 export const retryNotificationDelivery = async (token: string, id: number) => request(`/notification-deliveries/${id}/retry/`, { method: 'POST' }, token)
 export const getNotificationPreference = async (token: string) => request<NotificationPreference>('/notification-preferences/', {}, token)
 export const updateNotificationPreference = async (token: string, values: Partial<NotificationPreference>) => request<NotificationPreference>('/notification-preferences/me/', { method: 'PATCH', body: JSON.stringify(values) }, token)
@@ -198,6 +216,30 @@ export const getSignedAuditExport = async (token: string, patientId: number) => 
 export async function createTask(token: string, payload: Record<string, unknown>) {
   return request<TaskTemplate>('/tasks/', { method: 'POST', body: JSON.stringify(payload) }, token)
 }
+
+export const getTasks = async (token: string, patientId: number, active?: boolean) =>
+  (await request<Paginated<TaskTemplate>>(`/tasks/?patient=${patientId}${active === undefined ? '' : `&active=${active}`}&ordering=title`, {}, token)).results
+export const updateTask = async (token: string, id: number, payload: Partial<TaskTemplate>) => request<TaskTemplate>(`/tasks/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+export const deactivateTask = async (token: string, id: number) => request<void>(`/tasks/${id}/`, { method: 'DELETE' }, token)
+export const getTaskTemplates = async (token: string) => (await request<Paginated<OrganizationTaskTemplate>>('/task-templates/?active=true&ordering=name', {}, token)).results
+export const createTaskTemplate = async (token: string, payload: Partial<OrganizationTaskTemplate>) => request<OrganizationTaskTemplate>('/task-templates/', { method: 'POST', body: JSON.stringify(payload) }, token)
+export const updateTaskTemplate = async (token: string, id: number, payload: Partial<OrganizationTaskTemplate>) => request<OrganizationTaskTemplate>(`/task-templates/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+export const delayOccurrence = async (token: string, occurrence: TaskOccurrence, delayedUntil: string, reason: string) => request<TaskOccurrence>(`/occurrences/${occurrence.id}/delay/`, { method: 'POST', body: JSON.stringify({ delayed_until: delayedUntil, reason, expected_version: occurrence.version }) }, token)
+export const skipOccurrence = async (token: string, occurrence: TaskOccurrence, outcome: 'UNABLE' | 'REFUSED', note: string) => request<TaskOccurrence>(`/occurrences/${occurrence.id}/skip/`, { method: 'POST', body: JSON.stringify({ outcome, note, expected_version: occurrence.version }) }, token)
+export async function completeOccurrenceWithPhoto(token: string, occurrence: TaskOccurrence, payload: Record<string, unknown>, photo: File) {
+  const form = new FormData()
+  Object.entries(payload).forEach(([key, value]) => form.append(key, String(value)))
+  form.append('expected_version', String(occurrence.version))
+  form.append('client_reference', crypto.randomUUID())
+  form.append('photo', photo)
+  return request<TaskOccurrence>(`/occurrences/${occurrence.id}/complete/`, { method: 'POST', body: form }, token)
+}
+
+export const getPushSubscriptions = async (token: string) => (await request<Paginated<PushSubscription>>('/push-subscriptions/', {}, token)).results
+export const disablePushSubscription = async (token: string, id: number) => request<void>(`/push-subscriptions/${id}/`, { method: 'DELETE' }, token)
+export const disableMfa = async (token: string, code: string) => request<{ enabled: boolean }>('/mfa/disable/', { method: 'POST', body: JSON.stringify({ code }) }, token)
+export const updateProfile = async (token: string, id: number, payload: Partial<ApiUser>) => request<ApiUser>(`/users/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+export const transitionShift = async (token: string, id: number, action: 'accept' | 'check_in' | 'check_out') => request<ShiftAssignment>(`/shift-assignments/${id}/${action}/`, { method: 'POST' }, token)
 
 export async function createVital(token: string, payload: Record<string, unknown>) {
   return request<VitalRecord>('/vitals/', { method: 'POST', body: JSON.stringify(payload) }, token)

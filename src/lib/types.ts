@@ -20,6 +20,8 @@ export type Session = {
   user: ApiUser
 }
 
+export type Organization = { id: number; name: string; slug: string; country_code: string; timezone: string; active: boolean }
+
 export type Patient = {
   id: number
   first_name: string
@@ -36,7 +38,7 @@ export type Patient = {
 
 export type TaskSchedule = {
   id: number
-  frequency: 'ONCE' | 'DAILY' | 'WEEKLY' | 'INTERVAL' | 'AFTER_EVENT'
+  frequency: 'ONCE' | 'DAILY' | 'WEEKLY' | 'INTERVAL'
   time: string | null
   specific_date: string | null
   interval_hours: number | null
@@ -48,6 +50,18 @@ export type TaskSchedule = {
   ends_on: string | null
 }
 
+export type CareAssignment = {
+  id: number
+  user: number
+  user_detail: ApiUser
+  patient: number
+  patient_name: string
+  relationship: 'PRIMARY_CAREGIVER' | 'CAREGIVER' | 'DOCTOR' | 'FAMILY' | 'ADMINISTRATOR'
+  active: boolean
+  starts_at: string | null
+  ends_at: string | null
+}
+
 export type TaskTemplate = {
   id: number
   patient: number
@@ -56,11 +70,32 @@ export type TaskTemplate = {
   category: 'MEDICATION' | 'HEALTH' | 'MEAL' | 'ACTIVITY' | 'PERSONAL_CARE' | 'OTHER'
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   instructions: string
+  expected_outcome: string
+  safety_notes: string
+  equipment: string[]
+  requires_note: boolean
+  requires_photo: boolean
   assigned_to: number | null
   assigned_to_name: string | null
   active: boolean
   schedules: TaskSchedule[]
 }
+
+export type OrganizationTaskTemplate = {
+  id: number
+  name: string
+  title: string
+  category: TaskTemplate['category']
+  priority: TaskTemplate['priority']
+  instructions: string
+  expected_outcome: string
+  safety_notes: string
+  equipment: string[]
+  schedule_defaults: Partial<TaskSchedule>
+  active: boolean
+}
+
+export type PushSubscription = { id: number; endpoint: string; device_name: string; active: boolean; created_at: string }
 
 export type TaskOccurrence = {
   id: number
@@ -80,6 +115,7 @@ export type TaskOccurrence = {
     completed_by_name: string
     outcome: 'COMPLETED' | 'PARTIAL' | 'UNABLE' | 'REFUSED'
     note: string
+    photo: string | null
     created_at: string
   }
   corrections: TaskCorrection[]
@@ -113,13 +149,14 @@ export type Medication = {
   barcode: string
   is_prn: boolean
   prn_reason: string
-  maximum_daily_doses: number | null
+  max_daily_doses: number | null
   starts_on: string | null
   ends_on: string | null
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
   warnings: { severity: string; message: string; source: string }[]
   schedules: { id: number; time: string; days_of_week: number[]; instructions: string }[]
 }
+export type RefillRequest = { id: number; medication: number; medication_name: string; requested_by_name: string; quantity: number; status: 'REQUESTED' | 'ORDERED' | 'RECEIVED' | 'CANCELED'; note: string; resolved_at: string | null; created_at: string }
 
 export type DoseLog = {
   id: number
@@ -143,6 +180,9 @@ export type DoseLog = {
   verified_time: boolean
   was_late: boolean
   late_minutes: number
+  timing_status: 'ON_TIME' | 'EARLY' | 'LATE'
+  timing_variance_minutes: number
+  timing_reason: string
   is_prn: boolean
   corrections: DoseCorrection[]
   updated_at: string
@@ -268,6 +308,7 @@ export type ShiftReport = {
 export type ShiftAssignment = {
   id: number
   patient: number
+  caregiver: number
   caregiver_name: string
   starts_at: string
   ends_at: string
@@ -281,9 +322,12 @@ export type CarePlan = { id: number; title: string; status: string; goals: strin
 export type EmergencyContact = { id: number; name: string; relationship: string; phone: string; email: string; priority: number; authorized_for_updates: boolean }
 export type AdvanceDirective = { id: number; directive_type: string; summary: string; effective_from: string | null; reviewed_at: string | null; active: boolean }
 export type ClinicalDocument = { id: number; title: string; category: string; file: string; checksum_sha256: string; retention_until: string | null; source_system: string }
+export type WoundRecord = { id: number; location: string; description: string; length_cm: string | null; width_cm: string | null; recorded_at: string }
+export type VitalThreshold = { id: number; vital_type: VitalRecord['type']; minimum: string | null; maximum: string | null; secondary_minimum: string | null; secondary_maximum: string | null; severity: 'WARNING' | 'CRITICAL'; consecutive_readings: number; active: boolean }
 export type EscalationPolicy = { id: number; name: string; active: boolean; is_default: boolean; steps: { id: number; level: number; delay_minutes: number; channel: 'IN_APP' | 'PUSH' | 'SMS' | 'VOICE'; recipient_roles: string[] }[] }
 export type NotificationDelivery = { id: number; notification_title: string; channel: string; status: string; attempts: number; error: string; next_attempt_at: string | null; created_at: string }
 export type CaregiverAvailability = { id: number; caregiver: number; caregiver_name: string; starts_at: string; ends_at: string; available: boolean; note: string }
+export type CalendarData = { start: string; end: string; occurrences: TaskOccurrence[]; shifts: ShiftAssignment[]; availability: CaregiverAvailability[]; assignments: CareAssignment[] }
 
 export type AuditEvent = {
   id: number
