@@ -24,6 +24,9 @@ staticfiles/
 .env.*
 !.env.example
 
+# Local developer launchers
+run.sh
+
 # Frontend
 node_modules/
 dist/
