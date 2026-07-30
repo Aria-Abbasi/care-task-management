@@ -22,6 +22,10 @@ describe('task builder schedule helpers', () => {
       'Mon, Wed, Fri at 09:30',
     )
     expect(scheduleSummary(schedule())).toContain('window 0 min before / 30 min after')
+    const persian = scheduleSummary(schedule({ frequency: 'WEEKLY', days_of_week: [2], time: '10:00' }), 'fa')
+    expect(persian).toContain('سه‌شنبه')
+    expect(persian).toContain('بازه مجاز')
+    expect(persian).not.toContain('Every day')
   })
 
   it('previews interval occurrences from the selected first time', () => {
@@ -36,4 +40,3 @@ describe('task builder schedule helpers', () => {
     expect(preview.map((item) => item.toISOString().slice(0, 10))).toEqual(['2026-07-20', '2026-07-27'])
   })
 })
-

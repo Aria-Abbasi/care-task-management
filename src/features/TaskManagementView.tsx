@@ -6,7 +6,7 @@ import { deactivateTask, getCareAssignments, getTasks, updateTask } from '../lib
 import { scheduleSummary, type TaskCreationDraft } from '../lib/task-builder'
 import type { CareAssignment, Patient, Session, TaskSchedule, TaskTemplate } from '../lib/types'
 
-const summary = (schedule: TaskSchedule) => scheduleSummary({
+const summary = (schedule: TaskSchedule, locale: string) => scheduleSummary({
   frequency: schedule.frequency,
   time: schedule.time?.slice(0, 5) || '',
   specific_date: schedule.specific_date,
@@ -17,7 +17,7 @@ const summary = (schedule: TaskSchedule) => scheduleSummary({
   window_after_minutes: schedule.window_after_minutes,
   starts_on: schedule.starts_on,
   ends_on: schedule.ends_on,
-} as TaskCreationDraft['schedule'])
+} as TaskCreationDraft['schedule'], locale)
 
 export default function TaskManagementView({ session, patient, onAdd, notify, locale }: { session: Session; patient: Patient; onAdd: () => void; notify: (message: string) => void; locale: string }) {
   const fa = locale === 'fa'
@@ -57,7 +57,7 @@ export default function TaskManagementView({ session, patient, onAdd, notify, lo
     <section className="main-card table-card"><div className="table-tools"><label className="search-field"><span className="sr-only">{t.search}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.placeholder} /></label><label className="checkbox"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /><span>{t.archived}</span></label></div>{selectedIds.length > 0 && <div className="task-bulk-toolbar"><strong>{selectedIds.length} {t.selected}</strong><select value={bulkAssignee} onChange={(event) => setBulkAssignee(event.target.value)}><option value="">{t.chooseCaregiver}</option>{assignments.map((item) => <option key={item.user} value={item.user}>{item.user_detail.display_name}</option>)}</select><button className="primary-button" disabled={!bulkAssignee} onClick={bulkAssign}>{t.assign}</button></div>}
       <div className="task-table"><div className="table-head"><span>{t.task}</span><span>{t.schedule}</span><span>{t.status}</span><span>{t.actions}</span></div>
         {loading && <div className="empty-care"><RefreshCw className="spinning" /><strong>{t.loading}</strong></div>}
-        {!loading && shown.map((task) => <article className="table-row" key={task.id}><span className="table-task"><label className="task-select"><input type="checkbox" checked={selectedIds.includes(task.id)} onChange={() => setSelectedIds((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} /><span className="sr-only">{task.title}</span></label><ClipboardCheck /><span><strong>{task.title}</strong><small>{task.expected_outcome || task.instructions || t.details}</small></span></span><span>{task.schedules.map(summary).join(' · ') || t.noSchedule}</span><span><b className={`status-pill ${task.active ? 'done' : 'overdue'}`}>{task.active ? t.active : t.archivedStatus}</b></span><span className="med-actions"><button className="secondary-button" onClick={() => setEditing(task)}><Pencil />{t.edit}</button><button className="secondary-button" onClick={() => duplicate(task)}>{t.duplicate}</button>{task.active && <button className="danger-button" onClick={async () => { await deactivateTask(session.token, task.id); await load(); notify(fa ? 'وظیفه بایگانی شد؛ سابقه اجرا حفظ شده است' : 'Task archived; historical occurrences were preserved') }}><Archive />{t.archive}</button>}</span></article>)}
+        {!loading && shown.map((task) => <article className="table-row" key={task.id}><span className="table-task"><label className="task-select"><input type="checkbox" checked={selectedIds.includes(task.id)} onChange={() => setSelectedIds((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} /><span className="sr-only">{task.title}</span></label><ClipboardCheck /><span><strong>{task.title}</strong><small>{task.expected_outcome || task.instructions || t.details}</small></span></span><span>{task.schedules.map((schedule) => summary(schedule, locale)).join(' · ') || t.noSchedule}</span><span><b className={`status-pill ${task.active ? 'done' : 'overdue'}`}>{task.active ? t.active : t.archivedStatus}</b></span><span className="med-actions"><button className="secondary-button" onClick={() => setEditing(task)}><Pencil />{t.edit}</button><button className="secondary-button" onClick={() => duplicate(task)}>{t.duplicate}</button>{task.active && <button className="danger-button" onClick={async () => { await deactivateTask(session.token, task.id); await load(); notify(fa ? 'وظیفه بایگانی شد؛ سابقه اجرا حفظ شده است' : 'Task archived; historical occurrences were preserved') }}><Archive />{t.archive}</button>}</span></article>)}
         {!loading && !shown.length && <div className="empty-care"><ClipboardCheck /><strong>{t.none}</strong><p>{t.noneText}</p></div>}
       </div>
     </section>

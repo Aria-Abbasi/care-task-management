@@ -50,19 +50,33 @@ function parseLocalDate(value: string) {
   return new Date(year, month - 1, day)
 }
 
-export function scheduleSummary(schedule: TaskCreationDraft['schedule']) {
-  const time = schedule.time || 'flexible time'
-  let recurrence = `Every day at ${time}`
-  if (schedule.frequency === 'ONCE') recurrence = `${schedule.specific_date || 'Selected date'} at ${time}`
-  if (schedule.frequency === 'WEEKLY') {
-    const labels = weekdays.filter(([value]) => schedule.days_of_week.includes(value)).map(([, label]) => label)
-    recurrence = `${labels.join(', ') || 'Selected weekdays'} at ${time}`
+export function scheduleSummary(schedule: TaskCreationDraft['schedule'], locale = 'en') {
+  const fa = locale === 'fa'
+  const localTime = (value: string) => {
+    if (!value) return fa ? 'زمان منعطف' : 'flexible time'
+    if (!fa) return value
+    const [hours, minutes] = value.split(':').map(Number)
+    const number = new Intl.NumberFormat('fa-IR', { minimumIntegerDigits: 2, useGrouping: false })
+    return `${number.format(hours)}:${number.format(minutes)}`
   }
-  if (schedule.frequency === 'INTERVAL') recurrence = `Every ${schedule.interval_hours || '?'} hours from ${time}`
-  const bounds = [schedule.starts_on ? `from ${schedule.starts_on}` : '', schedule.ends_on ? `until ${schedule.ends_on}` : '']
+  const localDate = (value: string | null) => value && fa
+    ? new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(`${value}T12:00:00`))
+    : value
+  const time = localTime(schedule.time)
+  let recurrence = fa ? `هر روز ساعت ${time}` : `Every day at ${time}`
+  if (schedule.frequency === 'ONCE') recurrence = fa ? `${localDate(schedule.specific_date) || 'تاریخ انتخاب‌شده'} ساعت ${time}` : `${schedule.specific_date || 'Selected date'} at ${time}`
+  if (schedule.frequency === 'WEEKLY') {
+    const persianWeekdays: Record<number, string> = { 1: 'دوشنبه', 2: 'سه‌شنبه', 3: 'چهارشنبه', 4: 'پنجشنبه', 5: 'جمعه', 6: 'شنبه', 7: 'یکشنبه' }
+    const labels = weekdays.filter(([value]) => schedule.days_of_week.includes(value)).map(([value, label]) => fa ? persianWeekdays[value] : label)
+    recurrence = fa ? `${labels.join('، ') || 'روزهای انتخاب‌شده'} ساعت ${time}` : `${labels.join(', ') || 'Selected weekdays'} at ${time}`
+  }
+  if (schedule.frequency === 'INTERVAL') recurrence = fa ? `هر ${schedule.interval_hours || '؟'} ساعت از ${time}` : `Every ${schedule.interval_hours || '?'} hours from ${time}`
+  const bounds = [schedule.starts_on ? (fa ? `از ${localDate(schedule.starts_on)}` : `from ${schedule.starts_on}`) : '', schedule.ends_on ? (fa ? `تا ${localDate(schedule.ends_on)}` : `until ${schedule.ends_on}`) : '']
     .filter(Boolean)
     .join(' ')
-  return `${recurrence}${bounds ? `, ${bounds}` : ''} · window ${schedule.window_before_minutes} min before / ${schedule.window_after_minutes} min after`
+  return fa
+    ? `${recurrence}${bounds ? `، ${bounds}` : ''} · بازه مجاز: ${schedule.window_before_minutes} دقیقه پیش از زمان / ${schedule.window_after_minutes} دقیقه پس از زمان`
+    : `${recurrence}${bounds ? `, ${bounds}` : ''} · window ${schedule.window_before_minutes} min before / ${schedule.window_after_minutes} min after`
 }
 
 export function previewOccurrences(schedule: TaskCreationDraft['schedule'], count = 5) {

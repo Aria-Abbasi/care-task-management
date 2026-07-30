@@ -657,8 +657,8 @@ function App() {
     setSession(null)
   }
 
-  if (window.location.pathname === '/reset-password') return <PasswordReset />
-  if (!session || authExpired) return <Login onLogin={handleLogin} />
+  if (window.location.pathname === '/reset-password') return <PasswordReset locale={locale} onLocale={setLocale} />
+  if (!session || authExpired) return <Login onLogin={handleLogin} locale={locale} onLocale={setLocale} />
 
   if (loadingWorkspace && !dashboard) return <LoadingScreen />
 
@@ -786,7 +786,9 @@ function BrandMark() {
   return <span className="brand-mark"><HeartPulse size={20} strokeWidth={2.5} /></span>
 }
 
-function Login({ onLogin }: { onLogin: (loginValue: string, password: string, remember: boolean, mfaCode: string) => Promise<void> }) {
+function Login({ onLogin, locale, onLocale }: { onLogin: (loginValue: string, password: string, remember: boolean, mfaCode: string) => Promise<void>; locale: string; onLocale: (locale: string) => void }) {
+  const fa = locale === 'fa'
+  const t = (english: string, persian: string) => fa ? persian : english
   const [showPassword, setShowPassword] = useState(false)
   const [loginValue, setLoginValue] = useState('sarah@havencare.com')
   const [password, setPassword] = useState('caregiver')
@@ -802,43 +804,45 @@ function Login({ onLogin }: { onLogin: (loginValue: string, password: string, re
     try {
       await onLogin(loginValue, password, remember, mfaCode)
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : 'Unable to sign in right now.')
+      setError(fa ? 'ورود در حال حاضر ممکن نیست. نام کاربری، گذرواژه و کد تأیید را بررسی کنید.' : requestError instanceof ApiError ? requestError.message : 'Unable to sign in right now.')
     } finally {
       setSubmitting(false)
     }
   }
   return (
-    <div className="login-page">
+    <div className="login-page" dir={fa ? 'rtl' : 'ltr'}>
       <section className="login-story">
         <div className="login-brand"><BrandMark /><span>haven</span></div>
         <div className="story-copy">
-          <span className="eyebrow light"><ShieldCheck size={16} /> CARE, WITH CONFIDENCE</span>
-          <h1>Every detail cared for.<br />Every moment, clear.</h1>
-          <p>A calmer way for caregivers and families to stay connected, informed, and focused on what matters.</p>
+          <span className="eyebrow light"><ShieldCheck size={16} /> {t('CARE, WITH CONFIDENCE', 'مراقبت، با اطمینان')}</span>
+          <h1>{fa ? <>هر جزئیات با دقت.<br />هر لحظه، روشن.</> : <>Every detail cared for.<br />Every moment, clear.</>}</h1>
+          <p>{t('A calmer way for caregivers and families to stay connected, informed, and focused on what matters.', 'راهی آرام‌تر برای اینکه مراقبان و خانواده در ارتباط، آگاه و متمرکز بر آنچه اهمیت دارد بمانند.')}</p>
         </div>
-        <div className="story-quote"><span>“</span><p>Haven gives our family peace of mind, even when we can't be there in person.</p><small>— Layla, family member</small></div>
+        <div className="story-quote"><span>“</span><p>{t("Haven gives our family peace of mind, even when we can't be there in person.", 'Haven به خانواده ما آرامش خاطر می‌دهد، حتی وقتی نمی‌توانیم حضوری کنار او باشیم.')}</p><small>{t('— Layla, family member', '— لیلا، عضو خانواده')}</small></div>
       </section>
       <section className="login-panel">
         <form onSubmit={submit}>
-          <div className="mobile-login-brand"><BrandMark /><span>haven</span></div>
-          <span className="eyebrow">WELCOME BACK</span>
-          <h2>Sign in to continue</h2>
-          <p>Access Hassan's care workspace and today's plan.</p>
-          <label>Phone number or email<input value={loginValue} onChange={(event) => setLoginValue(event.target.value)} type="text" autoComplete="username" required /></label>
-          <div className="password-field"><label>Password<input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} autoComplete="current-password" required /></label><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button></div>
-          <label>Authenticator code <small>(if enabled)</small><input value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123456" /></label>
-          <div className="login-options"><label className="checkbox"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span>Keep me signed in</span></label><button type="button" onClick={async () => { await requestPasswordReset(loginValue); setResetSent(true) }}>Forgot password?</button></div>
-          {resetSent && <div className="secure-note"><CheckCircle2 /> If that account exists, reset instructions were sent.</div>}
+          <div className="login-form-top"><div className="mobile-login-brand"><BrandMark /><span>haven</span></div><button type="button" className="login-language" onClick={() => onLocale(fa ? 'en' : 'fa')} aria-label={t('Switch to Persian', 'تغییر به انگلیسی')}>{fa ? 'English' : 'فارسی'}</button></div>
+          <span className="eyebrow">{t('WELCOME BACK', 'خوش آمدید')}</span>
+          <h2>{t('Sign in to continue', 'برای ادامه وارد شوید')}</h2>
+          <p>{t("Access the care workspace and today's plan.", 'به فضای کاری مراقبت و برنامه امروز دسترسی پیدا کنید.')}</p>
+          <label>{t('Phone number or email', 'شماره تلفن یا ایمیل')}<input dir="ltr" value={loginValue} onChange={(event) => setLoginValue(event.target.value)} type="text" autoComplete="username" required /></label>
+          <div className="password-field"><label>{t('Password', 'گذرواژه')}<input dir="ltr" value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} autoComplete="current-password" required /></label><button type="button" aria-label={showPassword ? t('Hide password', 'پنهان کردن گذرواژه') : t('Show password', 'نمایش گذرواژه')} onClick={() => setShowPassword(!showPassword)}>{showPassword ? t('Hide', 'پنهان') : t('Show', 'نمایش')}</button></div>
+          <label>{t('Authenticator code', 'کد برنامه احراز هویت')} <small>{t('(if enabled)', '(در صورت فعال بودن)')}</small><input dir="ltr" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123456" /></label>
+          <div className="login-options"><label className="checkbox"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span>{t('Keep me signed in', 'مرا وارد نگه دارید')}</span></label><button type="button" onClick={async () => { await requestPasswordReset(loginValue); setResetSent(true) }}>{t('Forgot password?', 'گذرواژه را فراموش کرده‌اید؟')}</button></div>
+          {resetSent && <div className="secure-note"><CheckCircle2 /> {t('If that account exists, reset instructions were sent.', 'اگر این حساب وجود داشته باشد، دستور بازیابی ارسال شده است.')}</div>}
           {error && <div className="login-error"><AlertCircle />{error}</div>}
-          <button className="primary-button login-button" disabled={submitting}>{submitting ? <><RefreshCw className="spinning" /> Signing in…</> : <>Sign in securely <ChevronRight size={18} /></>}</button>
-          <div className="secure-note"><ShieldCheck size={16} /> Access is authenticated and limited to assigned care teams.</div>
+          <button className="primary-button login-button" disabled={submitting}>{submitting ? <><RefreshCw className="spinning" /> {t('Signing in…', 'در حال ورود…')}</> : <>{t('Sign in securely', 'ورود امن')} <ChevronRight size={18} /></>}</button>
+          <div className="secure-note"><ShieldCheck size={16} /> {t('Access is authenticated and limited to assigned care teams.', 'دسترسی احراز هویت شده و به تیم‌های مراقبت واگذارشده محدود است.')}</div>
         </form>
       </section>
     </div>
   )
 }
 
-function PasswordReset() {
+function PasswordReset({ locale, onLocale }: { locale: string; onLocale: (locale: string) => void }) {
+  const fa = locale === 'fa'
+  const t = (english: string, persian: string) => fa ? persian : english
   const query = new URLSearchParams(window.location.search)
   const uid = query.get('uid') || ''
   const token = query.get('token') || ''
@@ -847,11 +851,11 @@ function PasswordReset() {
   const [message, setMessage] = useState('')
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (password !== confirmation) { setMessage('Passwords do not match.'); return }
-    try { await confirmPasswordReset(uid, token, password); setMessage('Password updated. Return to sign in on all devices.') }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'This reset link is invalid or expired.') }
+    if (password !== confirmation) { setMessage(t('Passwords do not match.', 'گذرواژه‌ها یکسان نیستند.')); return }
+    try { await confirmPasswordReset(uid, token, password); setMessage(t('Password updated. Return to sign in on all devices.', 'گذرواژه تغییر کرد. اکنون در همه دستگاه‌ها وارد شوید.')) }
+    catch { setMessage(t('This reset link is invalid or expired.', 'پیوند بازیابی نامعتبر یا منقضی شده است.')) }
   }
-  return <div className="state-page"><form className="state-card task-form" onSubmit={submit}><BrandMark /><h2>Reset password</h2><p>This change remotely revokes every existing Haven session.</p><label>New password<input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label>Confirm password<input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>{message && <div className="secure-note" role="status">{message}</div>}<button className="primary-button">Update password</button><a href="/">Return to sign in</a></form></div>
+  return <div className="state-page" dir={fa ? 'rtl' : 'ltr'}><form className="state-card task-form" onSubmit={submit}><button type="button" className="login-language" onClick={() => onLocale(fa ? 'en' : 'fa')}>{fa ? 'English' : 'فارسی'}</button><BrandMark /><h2>{t('Reset password', 'بازیابی گذرواژه')}</h2><p>{t('This change remotely revokes every existing Haven session.', 'این تغییر همه نشست‌های فعال Haven را در دستگاه‌های دیگر پایان می‌دهد.')}</p><label>{t('New password', 'گذرواژه جدید')}<input dir="ltr" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label>{t('Confirm password', 'تأیید گذرواژه')}<input dir="ltr" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>{message && <div className="secure-note" role="status">{message}</div>}<button className="primary-button">{t('Update password', 'به‌روزرسانی گذرواژه')}</button><a href="/">{t('Return to sign in', 'بازگشت به ورود')}</a></form></div>
 }
 
 function LoadingScreen() {

@@ -320,6 +320,11 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
 .normal-badge { border: 0; display: inline-flex; color: var(--green-2); background: var(--mint); border-radius: 20px; padding: 5px 8px; font-size: 8px; font-style: normal; }
 .chart-tabs { display: flex; justify-content: end; margin: 10px 0 -5px; }
 .bp-chart svg { width: 100%; height: auto; overflow: visible; }
+.bp-chart .health-empty { min-height:150px; margin-top:18px; }
+.bp-chart .health-empty > svg { width:30px; height:30px; margin-bottom:7px; }
+.health-empty .secondary-button { min-height:36px; margin-top:11px; padding:0 12px; font-size:10px; }
+.health-empty .secondary-button svg { width:15px; height:15px; margin:0; }
+.empty-chart { min-height:0; }
 .grid-line { stroke: #e8ebe7; stroke-width: 1; }
 .chart-line { fill: none; stroke-width: 3; stroke-linecap: round; }
 .chart-line.systolic { stroke: #3e8d7d; }
@@ -434,6 +439,11 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
 .story-quote small { margin-left: 30px; color: #99b0aa; }
 .login-panel { display: grid; place-items: center; padding: 50px; }
 .login-panel form { width: min(390px, 100%); }
+.login-form-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.login-form-top .mobile-login-brand { margin:0; }
+.login-language { flex:0 0 auto; min-height:34px; border:1px solid #d7e4df; border-radius:9px; padding:0 11px; color:var(--green-2); background:#f8fcfa; font:inherit; font-size:10px; font-weight:800; cursor:pointer; }
+.login-language:hover { border-color:#94c6b8; background:#eff9f5; }
+.login-language:focus-visible { outline:2px solid var(--green-2); outline-offset:2px; }
 .mobile-login-brand { display: none; color: var(--ink); }
 .login-panel h2 { font-size: 29px; letter-spacing: -1px; margin: 12px 0 5px; }
 .login-panel form > p { color: var(--muted); font-size: 12px; margin-bottom: 30px; }
@@ -441,7 +451,11 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
 .login-panel input, .task-form input, .task-form select { width: 100%; height: 48px; margin-top: 7px; border: 1px solid #d9ded9; border-radius: 10px; padding: 0 13px; color: var(--ink); background: #fff; }
 .password-field { position: relative; }
 .password-field input { padding-right: 60px; }
-.password-field button { position: absolute; right: 9px; top: 17px; border: 0; background: none; color: var(--green-2); font-size: 9px; font-weight: 700; }
+.password-field button { position: absolute; right: 13px; bottom: 15px; min-height:24px; border:0; border-radius:6px; padding:0 5px; background:transparent; color:var(--green-2); font-size:9px; font-weight:700; line-height:1; }
+.password-field button:hover { background:#edf7f3; }
+.password-field button:focus-visible { outline:2px solid var(--green-2); outline-offset:1px; }
+[dir="rtl"] .password-field button { right:auto; left:9px; }
+[dir="rtl"] .password-field input { padding-right:13px; padding-left:60px; }
 .login-options { display: flex; justify-content: space-between; align-items: center; margin: -2px 0 22px; }
 .login-options .checkbox { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: 500; color: var(--muted); }
 .checkbox input { width: 15px; height: 15px; margin: 0; accent-color: var(--green-2); }

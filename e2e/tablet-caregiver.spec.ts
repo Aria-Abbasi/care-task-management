@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { signIn } from './helpers'
 
-test.beforeEach(({}, testInfo) => {
+test.beforeEach(({ page: _page }, testInfo) => {
+  void _page
   test.skip(testInfo.project.name !== 'caregiver-tablet', 'This suite covers the caregiver touch layout.')
 })
 
