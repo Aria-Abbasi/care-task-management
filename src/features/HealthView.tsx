@@ -14,7 +14,7 @@ function chartPath(values: number[], min: number, max: number) {
 export default function HealthView({ session, patient, latest, onRecord, canRecord = true, locale = 'en' }: { session: Session; patient: Patient; latest: VitalRecord[]; onRecord: () => void; canRecord?: boolean; locale?: string }) {
   const fa = locale === 'fa'
   const vitalLabels = fa ? { BLOOD_PRESSURE: 'فشار خون', HEART_RATE: 'ضربان قلب', OXYGEN: 'اشباع اکسیژن', TEMPERATURE: 'دما', WEIGHT: 'وزن', GLUCOSE: 'قند خون' } : labels
-  const t = fa ? { eyebrow: 'روندهای بالینی', title: 'اندازه‌گیری‌های سلامت', description: 'سوابق تاریخی با منشأ مشخص؛ هشدارها هرگز تشخیص خودکار ایجاد نمی‌کنند.', record: 'ثبت علائم حیاتی', retry: 'تلاش دوباره', vitalType: 'نوع اندازه‌گیری', months: '۳ ماه', days: (days: number) => `${days} روز`, history: 'روند', systolic: 'سیستولیک', diastolic: 'دیاستولیک', loading: 'در حال بارگذاری اندازه‌گیری‌ها', noRange: 'هنوز اندازه‌گیری ثبت نشده است', noRangeDetail: 'برای شروع روند این مورد، نخستین اندازه‌گیری را ثبت کنید.', firstReading: 'ثبت نخستین اندازه‌گیری', provenance: 'منشأ ثبت', noReading: 'بدون ثبت', imported: 'رکورد واردشده' } : { eyebrow: 'CLINICAL TRENDS', title: 'Health readings', description: 'Historical records with source provenance; alerts never make an automatic diagnosis.', record: 'Record vital', retry: 'Try again', vitalType: 'Vital type', months: '3 months', days: (days: number) => `${days} days`, history: 'history', systolic: 'Systolic', diastolic: 'Diastolic', loading: 'Loading readings', noRange: 'No readings recorded yet', noRangeDetail: 'Record the first reading to start this trend.', firstReading: 'Record first reading', provenance: 'Record provenance', noReading: 'No reading', imported: 'Imported record' }
+  const t = fa ? { eyebrow: 'روندهای بالینی', title: 'اندازه‌گیری‌های سلامت', description: 'سوابق تاریخی با منشأ مشخص؛ هشدارها هرگز تشخیص خودکار ایجاد نمی‌کنند.', record: 'ثبت علائم حیاتی', retry: 'تلاش دوباره', vitalType: 'نوع اندازه‌گیری', months: '۳ ماه', days: (days: number) => `${days} روز`, history: 'روند', systolic: 'سیستولیک', diastolic: 'دیاستولیک', loading: 'در حال بارگذاری اندازه‌گیری‌ها', loadError: 'سوابق تاریخی تازه‌سازی نشدند. داده‌های قبلی نمایش داده می‌شوند.', noRange: 'هنوز اندازه‌گیری ثبت نشده است', noRangeDetail: 'برای شروع روند این مورد، نخستین اندازه‌گیری را ثبت کنید.', firstReading: 'ثبت نخستین اندازه‌گیری', provenance: 'منشأ ثبت', noReading: 'بدون ثبت', imported: 'رکورد واردشده' } : { eyebrow: 'CLINICAL TRENDS', title: 'Health readings', description: 'Historical records with source provenance; alerts never make an automatic diagnosis.', record: 'Record vital', retry: 'Try again', vitalType: 'Vital type', months: '3 months', days: (days: number) => `${days} days`, history: 'history', systolic: 'Systolic', diastolic: 'Diastolic', loading: 'Loading readings', loadError: 'Historical readings could not be refreshed. Saved readings are shown.', noRange: 'No readings recorded yet', noRangeDetail: 'Record the first reading to start this trend.', firstReading: 'Record first reading', provenance: 'Record provenance', noReading: 'No reading', imported: 'Imported record' }
   const [vitals, setVitals] = useState<VitalRecord[]>(latest)
   const [range, setRange] = useState(7)
   const [type, setType] = useState<VitalRecord['type']>('BLOOD_PRESSURE')
@@ -23,9 +23,9 @@ export default function HealthView({ session, patient, latest, onRecord, canReco
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try { setVitals(await getVitals(session.token, patient.id)) }
-    catch { setVitals(latest); setError('Historical readings could not be refreshed.') }
+    catch { setVitals(latest); setError(t.loadError) }
     finally { setLoading(false) }
-  }, [latest, patient.id, session.token])
+  }, [latest, patient.id, session.token, t.loadError])
   useEffect(() => { load() }, [load])
   const points = useMemo(() => vitals.filter((item) => item.type === type && Date.now() - new Date(item.recorded_at).getTime() <= range * 86_400_000).slice(-40), [range, type, vitals])
   const primary = points.map((item) => Number(item.value)).filter(Number.isFinite)

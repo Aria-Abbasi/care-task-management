@@ -1,7 +1,8 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, Archive, ClipboardCheck, Pencil, Plus, RefreshCw, X } from 'lucide-react'
 
 import { PageHeader } from '../components/PageHeader'
+import { useDialogFocus } from '../components/useDialogFocus'
 import { deactivateTask, getCareAssignments, getTasks, updateTask } from '../lib/api'
 import { scheduleSummary, type TaskCreationDraft } from '../lib/task-builder'
 import type { CareAssignment, Patient, Session, TaskSchedule, TaskTemplate } from '../lib/types'
@@ -34,9 +35,9 @@ export default function TaskManagementView({ session, patient, onAdd, notify, lo
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try { setTasks(await getTasks(session.token, patient.id, showArchived ? undefined : true)) }
-    catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Tasks could not be loaded.') }
+    catch (requestError) { setError(requestError instanceof Error ? requestError.message : fa ? 'وظایف بارگذاری نشدند. دوباره تلاش کنید.' : 'Tasks could not be loaded. Try again.') }
     finally { setLoading(false) }
-  }, [patient.id, session.token, showArchived])
+  }, [fa, patient.id, session.token, showArchived])
   useEffect(() => { load() }, [load])
   useEffect(() => { getCareAssignments(session.token, patient.id).then((items) => setAssignments(items.filter((item) => item.active && item.user_detail.role !== 'FAMILY'))).catch(() => setAssignments([])) }, [patient.id, session.token])
   const shown = tasks.filter((task) => `${task.title} ${task.instructions}`.toLowerCase().includes(query.toLowerCase()))
@@ -72,6 +73,8 @@ function TaskEditDialog({ task, onClose, onSave, locale }: { task: TaskTemplate;
   const [expectedOutcome, setExpectedOutcome] = useState(task.expected_outcome)
   const [safetyNotes, setSafetyNotes] = useState(task.safety_notes)
   const [error, setError] = useState('')
+  const dialogRef = useRef<HTMLFormElement>(null)
+  useDialogFocus(dialogRef, onClose)
   const submit = async (event: FormEvent) => { event.preventDefault(); setError(''); try { await onSave({ title, instructions, expected_outcome: expectedOutcome, safety_notes: safetyNotes }) } catch (requestError) { setError(requestError instanceof Error ? requestError.message : fa ? 'به‌روزرسانی وظیفه ممکن نشد.' : 'Task could not be updated.') } }
-  return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label={fa ? 'بستن ویرایشگر وظیفه' : 'Close task editor'} /><form className="modal task-form" role="dialog" aria-modal="true" aria-labelledby="edit-task-title" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} aria-label={fa ? 'بستن' : 'Close'}><X /></button><h2 id="edit-task-title">{fa ? 'ویرایش تعریف وظیفه' : 'Edit task definition'}</h2><label>{fa ? 'نام وظیفه' : 'Task name'}<input required value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>{fa ? 'دستورهای مراقبت' : 'Care instructions'}<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} /></label><label>{fa ? 'نتیجه مورد انتظار' : 'Expected outcome'}<textarea value={expectedOutcome} onChange={(event) => setExpectedOutcome(event.target.value)} /></label><label>{fa ? 'یادداشت‌های ایمنی' : 'Safety notes'}<textarea value={safetyNotes} onChange={(event) => setSafetyNotes(event.target.value)} /></label>{error && <div className="login-error"><AlertCircle />{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{fa ? 'انصراف' : 'Cancel'}</button><button className="primary-button">{fa ? 'ذخیره وظیفه' : 'Save task'}</button></div></form></div>
+  return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label={fa ? 'بستن ویرایشگر وظیفه' : 'Close task editor'} tabIndex={-1} /><form ref={dialogRef} className="modal task-form" role="dialog" aria-modal="true" aria-labelledby="edit-task-title" tabIndex={-1} onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} aria-label={fa ? 'بستن' : 'Close'}><X /></button><h2 id="edit-task-title">{fa ? 'ویرایش تعریف وظیفه' : 'Edit task definition'}</h2><label>{fa ? 'نام وظیفه' : 'Task name'}<input required value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>{fa ? 'دستورهای مراقبت' : 'Care instructions'}<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} /></label><label>{fa ? 'نتیجه مورد انتظار' : 'Expected outcome'}<textarea value={expectedOutcome} onChange={(event) => setExpectedOutcome(event.target.value)} /></label><label>{fa ? 'یادداشت‌های ایمنی' : 'Safety notes'}<textarea value={safetyNotes} onChange={(event) => setSafetyNotes(event.target.value)} /></label>{error && <div className="login-error" role="alert"><AlertCircle />{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>{fa ? 'انصراف' : 'Cancel'}</button><button className="primary-button">{fa ? 'ذخیره وظیفه' : 'Save task'}</button></div></form></div>
 }

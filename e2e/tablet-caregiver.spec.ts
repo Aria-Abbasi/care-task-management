@@ -31,8 +31,9 @@ test('Persian caregiver tablet flow keeps identity and safety actions touch-read
   await page.locator('.modal-close').tap()
 
   await page.goto('/app/schedule')
+  await expect(page.locator('.unified-calendar')).toBeVisible({ timeout: 15_000 })
   const calendarEvent = page.locator('.agenda-event').first()
-  await expect(calendarEvent).toBeVisible()
+  await expect(calendarEvent).toBeVisible({ timeout: 20_000 })
   await calendarEvent.tap()
   await expect(page.locator('.calendar-event-drawer')).toBeVisible()
   await page.locator('.calendar-event-drawer .modal-close').tap()

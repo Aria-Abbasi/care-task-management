@@ -7,7 +7,10 @@ const tabletBrowserOverride = process.env.PLAYWRIGHT_TABLET_BROWSER === 'chromiu
 export default defineConfig({
   testDir: '.',
   testIgnore: process.env.CI ? ['visual.spec.ts'] : [],
-  timeout: 45_000,
+  // A full locale review deliberately visits every care screen and waits for
+  // their API-backed empty/loading states. Keep CI deterministic on a local
+  // development database rather than failing a healthy walkthrough at 45s.
+  timeout: 120_000,
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['github']] : 'list',

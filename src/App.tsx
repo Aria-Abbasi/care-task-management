@@ -262,9 +262,9 @@ function App() {
       if (cached) {
         setDashboard(cached)
         setTasks(mapDashboardTasks(cached, locale))
-        setWorkspaceError('Showing the most recent saved care plan.')
+        setWorkspaceError(locale === 'fa' ? 'آخرین برنامه مراقبت ذخیره‌شده نمایش داده می‌شود.' : 'Showing the most recent saved care plan.')
       } else {
-        setWorkspaceError(error instanceof Error ? error.message : 'Unable to load the care workspace.')
+        setWorkspaceError(error instanceof Error ? error.message : locale === 'fa' ? 'فضای کاری مراقبت بارگذاری نشد. دوباره تلاش کنید.' : 'Unable to load the care workspace. Try again.')
       }
     } finally {
       setLoadingWorkspace(false)
@@ -660,9 +660,9 @@ function App() {
   if (window.location.pathname === '/reset-password') return <PasswordReset locale={locale} onLocale={setLocale} />
   if (!session || authExpired) return <Login onLogin={handleLogin} locale={locale} onLocale={setLocale} />
 
-  if (loadingWorkspace && !dashboard) return <LoadingScreen />
+  if (loadingWorkspace && !dashboard) return <LoadingScreen locale={locale} />
 
-  if (!dashboard) return <WorkspaceError message={workspaceError} onRetry={() => refreshWorkspace(session)} onSignOut={signOut} />
+  if (!dashboard) return <WorkspaceError message={workspaceError} onRetry={() => refreshWorkspace(session)} onSignOut={signOut} locale={locale} />
 
   const patient = dashboard.patient
   const user = session.user
@@ -748,7 +748,7 @@ function App() {
           {view === 'shift' && <ShiftModeView patient={patient} tasks={tasks} doses={dashboard.dose_logs} offline={!online} pending={pendingSync} locale={locale} onTask={setSelectedTask} onDose={setSelectedDose} />}
           {view === 'schedule' && <Schedule session={session} patient={patient} tasks={tasks} locale={locale} selectedDate={selectedDate} onDate={(date) => refreshWorkspace(session, patient.id, date)} onTask={setSelectedTask} onAdd={() => setShowAddTask(true)} />}
           {view === 'medications' && <Medications session={session} patient={patient} medications={dashboard.medications} doses={dashboard.dose_logs} onDose={setSelectedDose} onPrn={setSelectedPrn} notify={notify} onRefresh={() => refreshWorkspace(session, patient.id, selectedDate)} locale={locale} />}
-          <Suspense fallback={<div className="main-card loading-feature"><RefreshCw className="spinning" /> Loading workspace…</div>}>
+          <Suspense fallback={<div className="main-card loading-feature" role="status"><RefreshCw className="spinning" /> {isPersian ? 'در حال بارگذاری فضای کاری…' : 'Loading workspace…'}</div>}>
             {view === 'health' && <HealthView session={session} patient={patient} latest={dashboard.latest_vitals} onRecord={() => setShowVital(true)} canRecord={user.role !== 'FAMILY'} locale={locale} />}
             {view === 'timeline' && <TimelineView session={session} patient={patient} dashboard={dashboard} locale={locale} />}
             {view === 'clinical' && <ClinicalProfileView session={session} patient={patient} locale={locale} />}
@@ -770,7 +770,7 @@ function App() {
       </nav>
 
       {notificationPanel && <NotificationPanel locale={locale} notifications={notifications} onClose={() => setNotificationPanel(false)} onAction={actOnNotification} />}
-      {searchOpen && <Modal onClose={() => { setSearchOpen(false); setSearchQuery('') }} label={shellCopy.searchLabel}><span className="eyebrow">{shellCopy.searchEyebrow}</span><h2>{shellCopy.searchTitle}</h2><label className="search-field"><Search /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={shellCopy.searchPlaceholder} /></label><div className="conversation-list">{searchItems.filter((item) => `${item.title} ${item.detail}`.toLocaleLowerCase().includes(searchQuery.toLocaleLowerCase())).slice(0, 18).map((item, index) => <button key={`${item.id}-${item.title}-${index}`} onClick={() => { navigate(item.id); setSearchOpen(false); setSearchQuery('') }}><Search /><span><strong>{item.title}</strong><small>{item.detail}</small></span></button>)}</div></Modal>}
+      {searchOpen && <Modal onClose={() => { setSearchOpen(false); setSearchQuery('') }} label={shellCopy.searchLabel}><span className="eyebrow">{shellCopy.searchEyebrow}</span><h2>{shellCopy.searchTitle}</h2><label className="search-field"><Search /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={shellCopy.searchPlaceholder} /></label><div className="conversation-list">{(() => { const results = searchItems.filter((item) => `${item.title} ${item.detail}`.toLocaleLowerCase().includes(searchQuery.toLocaleLowerCase())).slice(0, 18); return results.length ? results.map((item, index) => <button key={`${item.id}-${item.title}-${index}`} onClick={() => { navigate(item.id); setSearchOpen(false); setSearchQuery('') }}><Search /><span><strong>{item.title}</strong><small>{item.detail}</small></span></button>) : <div className="empty-care compact"><Search /><strong>{isPersian ? 'نتیجه‌ای پیدا نشد' : 'No results found'}</strong><p>{isPersian ? 'عبارت جستجو را تغییر دهید یا یک بخش دیگر را انتخاب کنید.' : 'Try another search term or choose a workspace section.'}</p></div> })()}</div></Modal>}
       {selectedTask && <TaskModal task={selectedTask} patient={patient} onClose={() => setSelectedTask(null)} onSave={recordTaskOutcome} onDelay={delayTask} onSkip={skipTask} onPhoto={(occurrenceId) => downloadTaskCompletionPhoto(session.token, occurrenceId)} locale={locale} />}
       {selectedDose && <DoseModal dose={selectedDose} patient={patient} onClose={() => setSelectedDose(null)} onSave={recordDoseOutcome} locale={locale} />}
       {selectedPrn && <PrnModal medication={selectedPrn} patient={patient} onClose={() => setSelectedPrn(null)} onSave={recordPrnDose} locale={locale} />}
@@ -790,7 +790,7 @@ function Login({ onLogin, locale, onLocale }: { onLogin: (loginValue: string, pa
   const fa = locale === 'fa'
   const t = (english: string, persian: string) => fa ? persian : english
   const [showPassword, setShowPassword] = useState(false)
-  const [loginValue, setLoginValue] = useState('sarah@havencare.com')
+  const [loginValue, setLoginValue] = useState('')
   const [password, setPassword] = useState('caregiver')
   const [remember, setRemember] = useState(true)
   const [mfaCode, setMfaCode] = useState('')
@@ -858,12 +858,14 @@ function PasswordReset({ locale, onLocale }: { locale: string; onLocale: (locale
   return <div className="state-page" dir={fa ? 'rtl' : 'ltr'}><form className="state-card task-form" onSubmit={submit}><button type="button" className="login-language" onClick={() => onLocale(fa ? 'en' : 'fa')}>{fa ? 'English' : 'فارسی'}</button><BrandMark /><h2>{t('Reset password', 'بازیابی گذرواژه')}</h2><p>{t('This change remotely revokes every existing Haven session.', 'این تغییر همه نشست‌های فعال Haven را در دستگاه‌های دیگر پایان می‌دهد.')}</p><label>{t('New password', 'گذرواژه جدید')}<input dir="ltr" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label>{t('Confirm password', 'تأیید گذرواژه')}<input dir="ltr" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></label>{message && <div className="secure-note" role="status">{message}</div>}<button className="primary-button">{t('Update password', 'به‌روزرسانی گذرواژه')}</button><a href="/">{t('Return to sign in', 'بازگشت به ورود')}</a></form></div>
 }
 
-function LoadingScreen() {
-  return <div className="state-page"><div className="state-card"><BrandMark /><RefreshCw className="spinning state-spinner" /><h2>Loading the care plan</h2><p>Retrieving the latest tasks, medications, and health readings.</p></div></div>
+function LoadingScreen({ locale }: { locale: string }) {
+  const fa = locale === 'fa'
+  return <div className="state-page" dir={fa ? 'rtl' : 'ltr'}><div className="state-card"><BrandMark /><RefreshCw className="spinning state-spinner" /><h2>{fa ? 'در حال بارگذاری برنامه مراقبت' : 'Loading the care plan'}</h2><p>{fa ? 'آخرین وظایف، داروها و اندازه‌گیری‌های سلامت دریافت می‌شوند.' : 'Retrieving the latest tasks, medications, and health readings.'}</p></div></div>
 }
 
-function WorkspaceError({ message, onRetry, onSignOut }: { message: string; onRetry: () => void; onSignOut: () => void }) {
-  return <div className="state-page"><div className="state-card error"><AlertCircle /><h2>Care workspace unavailable</h2><p>{message}</p><button className="primary-button" onClick={onRetry}><RefreshCw /> Try again</button><button className="text-button" onClick={onSignOut}>Sign out</button></div></div>
+function WorkspaceError({ message, onRetry, onSignOut, locale }: { message: string; onRetry: () => void; onSignOut: () => void; locale: string }) {
+  const fa = locale === 'fa'
+  return <div className="state-page" dir={fa ? 'rtl' : 'ltr'}><div className="state-card error"><AlertCircle /><h2>{fa ? 'فضای کاری مراقبت در دسترس نیست' : 'Care workspace unavailable'}</h2><p>{message}</p><button className="primary-button" onClick={onRetry}><RefreshCw /> {fa ? 'تلاش دوباره' : 'Try again'}</button><button className="text-button" onClick={onSignOut}>{fa ? 'خروج از حساب' : 'Sign out'}</button></div></div>
 }
 
 function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, onAdd, onNavigate }: { tasks: CareTask[]; patient: Patient; user: ApiUser; locale: string; vitals: VitalRecord[]; onTask: (task: CareTask) => void; onComplete: (task: CareTask) => void; onAdd: () => void; onNavigate: (view: View) => void }) {
@@ -923,7 +925,7 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
             <div className="focus-body"><TaskIcon task={now} large /><div className="focus-copy"><h3>{now.title}</h3><strong>{now.detail}</strong><p>{now.instructions}</p></div></div>
             <div className="focus-actions">{canRecordCare && <button className="complete-button" onClick={() => onComplete(now)}><Check size={20} /> {copy.markDone}</button>}<button className="secondary-button" onClick={() => onTask(now)}>{copy.details}</button></div>
           </div>}
-          {overdue.map((task) => <button className="overdue-card" key={task.id} onClick={() => onTask(task)}><span className="overdue-icon"><AlertCircle /></span><span><small>{copy.overdue} · {task.time}</small><strong>{task.title}</strong><em>{task.detail}</em></span><ChevronRight /></button>)}
+          {overdue.map((task) => <button className="overdue-card" key={task.id} onClick={() => onTask(task)}><span className="overdue-icon"><AlertCircle /></span><span className="overdue-copy"><span className="overdue-meta"><span>{copy.overdue}</span><time dir="ltr">{task.time}</time></span><strong><bdi>{task.title}</bdi></strong><em><bdi>{task.detail}</bdi></em></span><ChevronRight /></button>)}
           <div className="up-next"><div className="subsection-heading"><h3>{copy.upNext}</h3><button onClick={() => onNavigate('schedule')}>{copy.viewSchedule} <ChevronRight size={16} /></button></div>{upcoming.map((task) => <TaskRow key={task.id} task={task} onClick={() => onTask(task)} />)}{!tasks.length && <div className="empty-care"><CheckCircle2 /><strong>{copy.noTasks}</strong><p>{copy.noTasksText}</p></div>}</div>
         </section>
 
@@ -1020,7 +1022,7 @@ function TaskIcon({ task, large = false }: { task: CareTask; large?: boolean }) 
 }
 
 function TaskRow({ task, onClick }: { task: CareTask; onClick: () => void }) {
-  return <button className="task-row" onClick={onClick}><time>{task.time}</time><TaskIcon task={task} /><span><strong>{task.title}</strong><small>{task.detail}</small></span><ChevronRight /></button>
+  return <button className="task-row" onClick={onClick}><time dir="ltr">{task.time}</time><TaskIcon task={task} /><span className="task-row-copy"><strong><bdi>{task.title}</bdi></strong><small><bdi>{task.detail}</bdi></small></span><ChevronRight /></button>
 }
 
 function Modal({ children, onClose, label = 'Care dialog', locale = 'en' }: { children: ReactNode; onClose: () => void; label?: string; locale?: string }) {

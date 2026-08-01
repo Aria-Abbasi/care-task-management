@@ -37,7 +37,7 @@ const copy = {
     profile: 'پروفایل شما', profileDetail: 'اطلاعات تماس را برای تحویل شیفت و تیم مراقبت به‌روز نگه دارید.', saveProfile: 'ذخیره تغییرات', saved: 'پروفایل ذخیره شد',
     preferences: 'تنظیمات فضای کاری', preferencesDetail: 'زبان، جهت نوشتار و تقویم در این دستگاه حفظ می‌شوند.',
     language: 'زبان و تقویم', languageDetail: 'نحوه نمایش تاریخ‌ها و محیط مراقبت را انتخاب کنید.',
-    english: 'English', englishDetail: 'Gregorian calendar · left-to-right', persian: 'فارسی', persianDetail: 'تقویم جلالی · راست‌به‌چپ',
+    english: 'انگلیسی', englishDetail: 'تقویم میلادی · چپ‌به‌راست', persian: 'فارسی', persianDetail: 'تقویم جلالی · راست‌به‌چپ',
     active: 'فعال', calendar: 'پیش‌نمایش تقویم', gregorian: 'تقویم میلادی', jalali: 'تقویم جلالی',
     notifications: 'اعلان‌های مراقبت', notificationsDetail: 'روش دریافت اطلاع‌رسانی‌های ضروری در این دستگاه را انتخاب کنید.', enablePush: 'فعال‌سازی اعلان پس‌زمینه', activate: 'فعال‌سازی', pushDetail: 'حتی وقتی Haven بسته است، هشدارها را دریافت کنید.', pushEnabled: 'اعلان پس‌زمینه در این دستگاه فعال شد', pushDisabled: 'اعلان این مرورگر غیرفعال شد', pushFailed: 'راه‌اندازی اعلان ناموفق بود',
     sms: 'تشدید از طریق پیامک', smsDetail: 'برای مراقبت‌های از دست‌رفته و ضروری پیامک ارسال شود.', voice: 'تشدید از طریق تماس', voiceDetail: 'برای موارد ضروری تماس خودکار برقرار شود.', quietOverride: 'استثنا برای ساعات سکوت', quietOverrideDetail: 'هشدارهای دارویی ضروری می‌توانند ساعات سکوت را رد کنند.', quietStart: 'شروع ساعات سکوت', quietEnd: 'پایان ساعات سکوت', notificationSaved: 'تنظیمات اعلان ذخیره شد',
@@ -50,6 +50,7 @@ const copy = {
 export default function SettingsView({ session, onSignOut, notify, locale, onLocale }: { session: Session; onSignOut: () => void; notify: (message: string) => void; locale: string; onLocale: (value: string) => void }) {
   const isPersian = locale === 'fa'
   const text = copy[isPersian ? 'fa' : 'en']
+  const roleLabel = isPersian ? ({ CAREGIVER: 'مراقب', DOCTOR: 'پزشک', FAMILY: 'خانواده', ADMIN: 'مدیر' }[session.user.role] || session.user.role) : session.user.role.toLocaleLowerCase()
   const dateLocale = isPersian ? 'fa-IR-u-ca-persian' : 'en-GB'
   const [preference, setPreference] = useState<NotificationPreference | null>(null)
   const [sessions, setSessions] = useState<DeviceSession[]>([])
@@ -90,7 +91,7 @@ export default function SettingsView({ session, onSignOut, notify, locale, onLoc
 
         <section className="main-card settings-card settings-section">
           <SectionHeading icon={<UserRound />} title={text.profile} detail={text.profileDetail} />
-          <div className="profile-settings"><div className="avatar avatar-sarah large-avatar">{initials(session.user.display_name)}</div><div><strong>{session.user.display_name}</strong><span>{session.user.role.toLowerCase()} · {session.user.organization_name || text.independent}</span><small>{text.expires} {formatDate(session.expires_at, { dateStyle: 'medium', timeStyle: 'short' })}</small></div></div>
+          <div className="profile-settings"><div className="avatar avatar-sarah large-avatar">{initials(session.user.display_name)}</div><div><strong>{session.user.display_name}</strong><span>{roleLabel} · {session.user.organization_name || text.independent}</span><small>{text.expires} {formatDate(session.expires_at, { dateStyle: 'medium', timeStyle: 'short' })}</small></div></div>
           <div className="profile-form-row"><label><span>{isPersian ? 'نام' : 'First name'}</span><input value={profile.first_name} onChange={(event) => setProfile({ ...profile, first_name: event.target.value })} /></label><label><span>{isPersian ? 'نام خانوادگی' : 'Last name'}</span><input value={profile.last_name} onChange={(event) => setProfile({ ...profile, last_name: event.target.value })} /></label></div>
           <div className="profile-form-row"><label><span>{isPersian ? 'ایمیل' : 'Email'}</span><input type="email" dir="ltr" value={profile.email} onChange={(event) => setProfile({ ...profile, email: event.target.value })} /></label><label><span>{isPersian ? 'شماره تلفن' : 'Phone'}</span><input dir="ltr" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} /></label></div>
           <button className="secondary-button" onClick={async () => { await updateProfile(session.token, session.user.id, { ...profile, phone: profile.phone || null }); notify(text.saved) }}><Check />{text.saveProfile}</button>
