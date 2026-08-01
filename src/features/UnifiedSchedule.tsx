@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CalendarDays, CheckCircle2, ChevronRight, Clock3, ShieldCheck, UserRound, X } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, ShieldCheck, UserRound, X } from 'lucide-react'
 
 import { getCalendar } from '../lib/api'
 import type { CalendarData, Patient, Session, TaskOccurrence } from '../lib/types'
@@ -43,10 +43,24 @@ export default function UnifiedSchedule({ session, patient, selectedDate, locale
   const occurrenceFor = (date: Date) => data?.occurrences.filter((item) => sameDay(new Date(item.effective_scheduled_at), date)) || []
   const goDay = async (date: Date) => { await onDate(key(date)); setMode('day') }
   const dateLabel = new Intl.DateTimeFormat(localeCode, { dateStyle: 'full' }).format(base)
+  const navigationLabel = useMemo(() => {
+    if (mode === 'day') return dateLabel
+    if (mode === 'month') return new Intl.DateTimeFormat(localeCode, { month: 'long', year: 'numeric' }).format(base)
+    const weekEnd = new Date(start); weekEnd.setDate(weekEnd.getDate() + 6)
+    const format = new Intl.DateTimeFormat(localeCode, { month: 'short', day: 'numeric' })
+    return `${format.format(start)} – ${format.format(weekEnd)}`
+  }, [base, dateLabel, localeCode, mode, start])
+  const movePeriod = async (direction: -1 | 1) => {
+    const next = new Date(base)
+    if (mode === 'day') next.setDate(next.getDate() + direction)
+    if (mode === 'week') next.setDate(next.getDate() + direction * 7)
+    if (mode === 'month') next.setMonth(next.getMonth() + direction)
+    await onDate(key(next))
+  }
   return <>
     <section className="page-header schedule-primary-header"><div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{dateLabel}</p></div><button className="primary-button" onClick={onAdd}><CalendarDays />{copy.action}</button></section>
     <section className="unified-calendar" aria-label={copy.title}>
-      <header className="unified-calendar-toolbar"><div className="schedule-view-controls" role="group" aria-label={fa ? 'نمای تقویم' : 'Calendar view'}>{(['day', 'week', 'month'] as Mode[]).map((item) => <button key={item} className={mode === item ? 'active' : ''} aria-pressed={mode === item} onClick={() => setMode(item)}>{copy[item]}</button>)}</div><button className="calendar-today-button" onClick={() => onDate(key(new Date()))}>{copy.today}</button></header>
+      <header className="unified-calendar-toolbar"><div className="calendar-navigation" role="group" aria-label={fa ? 'پیمایش تقویم' : 'Calendar navigation'}><button type="button" onClick={() => movePeriod(-1)} aria-label={fa ? `${mode === 'day' ? 'روز' : mode === 'week' ? 'هفته' : 'ماه'} قبل` : `Previous ${mode}`}><ChevronLeft /></button><strong aria-live="polite">{navigationLabel}</strong><button type="button" onClick={() => movePeriod(1)} aria-label={fa ? `${mode === 'day' ? 'روز' : mode === 'week' ? 'هفته' : 'ماه'} بعد` : `Next ${mode}`}><ChevronRight /></button></div><div className="schedule-toolbar-actions"><div className="schedule-view-controls" role="group" aria-label={fa ? 'نمای تقویم' : 'Calendar view'}>{(['day', 'week', 'month'] as Mode[]).map((item) => <button key={item} className={mode === item ? 'active' : ''} aria-pressed={mode === item} onClick={() => setMode(item)}>{copy[item]}</button>)}</div><button className="calendar-today-button" onClick={() => onDate(key(new Date()))}>{copy.today}</button></div></header>
       {loading && <div className="calendar-state"><Clock3 className="spinning" /><strong>{copy.loading}</strong></div>}
       {error && <div className="calendar-state error"><AlertCircle /><strong>{error}</strong><button className="secondary-button" onClick={load}>{copy.retry}</button></div>}
       {!loading && !error && mode === 'day' && <DayAgenda date={base} items={occurrenceFor(base)} shifts={data?.shifts || []} fa={fa} copy={copy} onSelect={setSelected} />}

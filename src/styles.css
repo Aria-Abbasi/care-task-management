@@ -275,6 +275,11 @@ i.green { background: var(--green-2); } i.amber { background: #d5a35c; } i.red {
 .table-task { display: flex; align-items: center; gap: 12px; }
 .table-task strong, .table-task small { display: block; }
 .table-task small { color: var(--muted); margin-top: 3px; }
+.task-schedule { line-height:1.55; }
+html[dir="rtl"] .task-table { direction:rtl; }
+html[dir="rtl"] .table-head, html[dir="rtl"] .table-row { text-align:right; }
+html[dir="rtl"] .table-task, html[dir="rtl"] .task-schedule { direction:rtl; text-align:right; unicode-bidi:plaintext; }
+html[dir="rtl"] .task-schedule { font-family:Tahoma, Arial, sans-serif; }
 .status-pill { text-transform: capitalize; font-size: 9px; padding: 5px 8px; border-radius: 20px; background: #eef0ed; }
 .status-pill.done { color: var(--green-2); background: var(--mint); }
 .status-pill.overdue { color: var(--coral); background: var(--coral-light); }
@@ -1284,6 +1289,13 @@ html[dir="rtl"] .timeline-event.medication p { direction:ltr; text-align:right; 
 .unified-calendar { overflow:hidden; border:1px solid var(--border); border-radius:18px; background:var(--card); box-shadow:var(--shadow); }
 .unified-calendar-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--border); }
 .unified-calendar-toolbar .schedule-view-controls { margin:0; }
+.schedule-toolbar-actions, .calendar-navigation { display:flex; align-items:center; gap:8px; }
+.calendar-navigation { min-width:0; border:1px solid #d8e3df; border-radius:10px; padding:3px; background:#fff; }
+.calendar-navigation button { width:30px; height:30px; display:grid; place-items:center; flex:0 0 auto; border:0; border-radius:7px; color:var(--green-2); background:transparent; }
+.calendar-navigation button:hover { background:#edf7f3; }
+.calendar-navigation button:focus-visible { outline:2px solid var(--green-2); outline-offset:1px; }
+.calendar-navigation svg { width:17px; }
+.calendar-navigation strong { min-width:145px; padding:0 5px; overflow:hidden; color:var(--ink); font-size:10px; line-height:1.3; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
 .calendar-today-button { min-height:34px; padding:0 12px; border:1px solid #d8e3df; border-radius:17px; color:var(--green-2); background:#fff; font-size:10px; font-weight:800; }
 .calendar-state, .calendar-empty { display:grid; place-items:center; gap:9px; min-height:260px; padding:28px; color:var(--muted); text-align:center; }
 .calendar-state.error { color:#a14d3f; }
@@ -1342,6 +1354,8 @@ html[dir="rtl"] .timeline-event.medication p { direction:ltr; text-align:right; 
 .calendar-event-drawer dt { margin-bottom:4px; color:var(--muted); font-size:9px; font-weight:800; }
 .calendar-event-drawer dd { margin:0; color:var(--ink); font-size:12px; line-height:1.55; }
 html[dir="rtl"] .unified-calendar-toolbar { flex-direction:row-reverse; }
+html[dir="rtl"] .calendar-navigation { direction:rtl; }
+html[dir="rtl"] .calendar-navigation button svg { transform:rotate(180deg); }
 html[dir="rtl"] .agenda-event, html[dir="rtl"] .week-event-chip, html[dir="rtl"] .month-task-chip, html[dir="rtl"] .month-more { text-align:right; }
 html[dir="rtl"] .month-day-button { align-self:flex-end; }
 html[dir="rtl"] .calendar-event-drawer { right:auto; left:0; border-right:1px solid var(--border); border-left:0; box-shadow:18px 0 55px rgba(20,47,40,.18); }
@@ -1368,7 +1382,7 @@ html[dir="rtl"] .calendar-event-drawer .modal-close { left:auto; right:18px; }
 @media (max-width:700px) { .shift-priority-grid { grid-template-columns:1fr; }.shift-priority-grid > section { padding:13px; }.shift-next-list { display:block; }.shift-patient-lockup { top:4px; }.shift-action-card { min-height:70px; } }
 html[dir="rtl"] .shift-action-card, html[dir="rtl"] .shift-next-list button { text-align:right; }
 html[dir="rtl"] .shift-action-card.medication time + span { direction:ltr; text-align:right; unicode-bidi:plaintext; }
-@media (max-width:700px) { .schedule-primary-header { align-items:stretch; } .unified-calendar-toolbar { align-items:stretch; flex-direction:column; } .unified-calendar-toolbar .schedule-view-controls { justify-content:stretch; } .unified-calendar-toolbar .schedule-view-controls button { flex:1; } .calendar-today-button { align-self:flex-start; } .day-agenda { padding:14px; } .agenda-event { grid-template-columns:58px minmax(0,1fr) auto; gap:8px; } .agenda-event b { grid-column:2; justify-self:start; } .agenda-event > svg { grid-column:3; grid-row:1 / span 2; } .clean-month { padding:10px; } .clean-month-grid section { min-height:76px; padding:4px; } .month-task-chip { max-width:100%; font-size:7px; } }
+@media (max-width:700px) { .schedule-primary-header { align-items:stretch; } .unified-calendar-toolbar { align-items:stretch; flex-direction:column; } html[dir="rtl"] .unified-calendar-toolbar { flex-direction:column; } .schedule-toolbar-actions { width:100%; flex-direction:column; align-items:stretch; } .unified-calendar-toolbar .schedule-view-controls { justify-content:stretch; } .unified-calendar-toolbar .schedule-view-controls button { flex:1; } .calendar-navigation { justify-content:space-between; } .calendar-navigation strong { min-width:0; flex:1; } .calendar-today-button { align-self:flex-start; } .day-agenda { padding:14px; } .agenda-event { grid-template-columns:58px minmax(0,1fr) auto; gap:8px; } .agenda-event b { grid-column:2; justify-self:start; } .agenda-event > svg { grid-column:3; grid-row:1 / span 2; } .clean-month { padding:10px; } .clean-month-grid section { min-height:76px; padding:4px; } .month-task-chip { max-width:100%; font-size:7px; } }
 .month-calendar { margin-bottom:18px; padding:18px; }
 .month-calendar .calendar-head { margin-bottom:13px; }
 .month-calendar h2 { margin:0; font-size:15px; }

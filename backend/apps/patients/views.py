@@ -11,10 +11,10 @@ from apps.accounts.models import User
 from apps.care_tasks.models import TaskOccurrence
 from apps.care_tasks.serializers import TaskOccurrenceSerializer
 from apps.care_tasks.services import generate_occurrences_for_date
-from apps.communications.models import CaregiverAvailability, ShiftAssignment
-from apps.communications.serializers import CaregiverAvailabilitySerializer, ShiftAssignmentSerializer
 from apps.common.permissions import IsCareAdmin
 from apps.common.timezones import patient_timezone
+from apps.communications.models import CaregiverAvailability, ShiftAssignment
+from apps.communications.serializers import CaregiverAvailabilitySerializer, ShiftAssignmentSerializer
 from apps.health.models import VitalRecord
 from apps.health.serializers import VitalRecordSerializer
 from apps.medications.models import DoseLog, Medication
@@ -138,18 +138,28 @@ class PatientViewSet(viewsets.ModelViewSet):
         zone = patient_timezone(patient)
         range_start = timezone.make_aware(datetime.combine(start_date, time.min), zone)
         range_end = timezone.make_aware(datetime.combine(end_date, time.min), zone)
-        occurrences = TaskOccurrence.objects.filter(task__patient=patient, scheduled_at__gte=range_start, scheduled_at__lt=range_end).select_related("task", "completed_by", "schedule").prefetch_related("task__schedules")
-        shifts = ShiftAssignment.objects.filter(patient=patient, starts_at__lt=range_end, ends_at__gt=range_start).select_related("patient", "caregiver")
+        occurrences = (
+            TaskOccurrence.objects.filter(task__patient=patient, scheduled_at__gte=range_start, scheduled_at__lt=range_end)
+            .select_related("task", "completed_by", "schedule")
+            .prefetch_related("task__schedules")
+        )
+        shifts = ShiftAssignment.objects.filter(patient=patient, starts_at__lt=range_end, ends_at__gt=range_start).select_related(
+            "patient", "caregiver"
+        )
         assignments = CareAssignment.objects.filter(patient=patient, active=True).select_related("user", "patient")
-        availability = CaregiverAvailability.objects.filter(caregiver_id__in=assignments.values_list("user_id", flat=True), starts_at__lt=range_end, ends_at__gt=range_start).select_related("caregiver")
-        return Response({
-            "start": start_value,
-            "end": end_value,
-            "occurrences": TaskOccurrenceSerializer(occurrences, many=True, context={"request": request}).data,
-            "shifts": ShiftAssignmentSerializer(shifts, many=True, context={"request": request}).data,
-            "availability": CaregiverAvailabilitySerializer(availability, many=True, context={"request": request}).data,
-            "assignments": CareAssignmentSerializer(assignments, many=True, context={"request": request}).data,
-        })
+        availability = CaregiverAvailability.objects.filter(
+            caregiver_id__in=assignments.values_list("user_id", flat=True), starts_at__lt=range_end, ends_at__gt=range_start
+        ).select_related("caregiver")
+        return Response(
+            {
+                "start": start_value,
+                "end": end_value,
+                "occurrences": TaskOccurrenceSerializer(occurrences, many=True, context={"request": request}).data,
+                "shifts": ShiftAssignmentSerializer(shifts, many=True, context={"request": request}).data,
+                "availability": CaregiverAvailabilitySerializer(availability, many=True, context={"request": request}).data,
+                "assignments": CareAssignmentSerializer(assignments, many=True, context={"request": request}).data,
+            }
+        )
 
 
 class CareAssignmentViewSet(viewsets.ModelViewSet):

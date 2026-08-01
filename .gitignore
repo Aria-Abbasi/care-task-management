@@ -37,6 +37,8 @@ e2e/test-results/
 e2e/playwright-report/
 
 # Editors and operating systems
+.agents/
+skills-lock.json
 .idea/
 .vscode/
 .DS_Store
