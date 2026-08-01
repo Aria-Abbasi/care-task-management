@@ -791,7 +791,7 @@ function Login({ onLogin, locale, onLocale }: { onLogin: (loginValue: string, pa
   const t = (english: string, persian: string) => fa ? persian : english
   const [showPassword, setShowPassword] = useState(false)
   const [loginValue, setLoginValue] = useState('')
-  const [password, setPassword] = useState('caregiver')
+  const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [mfaCode, setMfaCode] = useState('')
   const [error, setError] = useState('')
