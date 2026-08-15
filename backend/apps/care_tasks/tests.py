@@ -324,6 +324,48 @@ class CareApiTests(APITestCase):
         self.assertEqual(self.occurrence.completed_by, self.caregiver)
         self.assertTrue(CompletionLog.objects.filter(occurrence=self.occurrence).exists())
 
+    def test_family_account_cannot_complete_delay_skip_or_correct_task(self):
+        family = User.objects.create_user(
+            username="family-task-reader",
+            email="family-task-reader@example.com",
+            password="safe-test-password",
+            role=User.Role.FAMILY,
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(
+            user=family,
+            patient=self.patient,
+            relationship=CareAssignment.Relationship.FAMILY,
+        )
+        self.client.force_authenticate(family)
+        actions = {
+            "complete": {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+            "delay": {
+                "delayed_until": (timezone.now() + timedelta(hours=1)).isoformat(),
+                "reason": "Care team follow-up",
+                "expected_version": 1,
+            },
+            "skip": {"outcome": CompletionLog.Outcome.UNABLE, "note": "Not available", "expected_version": 1},
+            "correct": {
+                "corrected_status": TaskOccurrence.Status.PENDING,
+                "reason": "Family cannot correct care records",
+                "expected_version": 1,
+            },
+        }
+
+        for action, payload in actions.items():
+            with self.subTest(action=action):
+                response = self.client.post(
+                    f"/api/v1/occurrences/{self.occurrence.id}/{action}/",
+                    payload,
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.occurrence.refresh_from_db()
+        self.assertEqual(self.occurrence.status, TaskOccurrence.Status.PENDING)
+        self.assertFalse(CompletionLog.objects.filter(occurrence=self.occurrence).exists())
+
     def test_completion_can_be_replayed_with_same_offline_reference(self):
         self.authenticate()
         client_reference = uuid4()

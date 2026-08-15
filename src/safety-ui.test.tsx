@@ -128,4 +128,42 @@ describe('safe caregiver dialogs', () => {
     expect(reports).not.toContain('Send handover')
     expect(reports).toContain('Read-only family view')
   })
+
+  it('shows task details without care-recording controls to family accounts', () => {
+    const task = {
+      id: 12,
+      taskId: 3,
+      time: '09:30',
+      title: 'Blood pressure check',
+      detail: 'Due now',
+      category: 'health',
+      status: 'now',
+      instructions: 'Allow five minutes of rest.',
+      occurrence: {
+        id: 12,
+        task: 3,
+        task_detail: { priority: 'HIGH', equipment: [], corrections: [] } as never,
+        schedule: 1,
+        scheduled_at: '2026-07-16T09:30:00Z',
+        effective_scheduled_at: '2026-07-16T09:30:00Z',
+        status: 'PENDING',
+        outcome: '',
+        version: 1,
+        completed_at: null,
+        completed_by: null,
+        delayed_until: null,
+        completion: null,
+        corrections: [],
+        updated_at: '2026-07-16T09:00:00Z',
+      },
+    } as ComponentProps<typeof TaskModal>['task']
+    const markup = renderToStaticMarkup(
+      <TaskModal task={task} patient={patient} canRecord={false} onClose={vi.fn()} onSave={vi.fn()} />,
+    )
+
+    expect(markup).toContain('Family read-only view')
+    expect(markup).not.toContain('Care outcome')
+    expect(markup).not.toContain('Record outcome')
+    expect(markup).not.toContain('Delay or skip this occurrence')
+  })
 })
