@@ -162,6 +162,44 @@ class CareApiTests(APITestCase):
         self.assertEqual(completion.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("note", completion.data)
 
+    def test_completion_note_is_optional_when_task_policy_allows_it(self):
+        self.authenticate()
+        self.assertFalse(self.task.requires_note)
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], TaskOccurrence.Status.DONE)
+        self.assertEqual(response.data["completion"]["note"], "")
+
+    def test_organization_template_preserves_completion_requirements(self):
+        admin = User.objects.create_user(
+            username="template-policy-admin",
+            email="template-policy-admin@example.com",
+            password="safe-test-password",
+            role=User.Role.ADMIN,
+            organization=self.organization,
+        )
+        self.client.force_authenticate(admin)
+        response = self.client.post(
+            "/api/v1/task-templates/",
+            {
+                "name": "Documented wound care",
+                "title": "Wound care",
+                "category": Task.Category.HEALTH,
+                "instructions": "Follow the approved wound-care plan.",
+                "requires_note": True,
+                "requires_photo": True,
+                "schedule_defaults": {"frequency": TaskSchedule.Frequency.DAILY, "time": "09:00"},
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["requires_note"])
+        self.assertTrue(response.data["requires_photo"])
+
     def test_organization_task_templates_are_admin_managed(self):
         self.authenticate()
         payload = {

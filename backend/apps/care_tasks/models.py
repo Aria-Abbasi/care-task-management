@@ -76,6 +76,8 @@ class CareTaskTemplate(TimeStampedModel):
     expected_outcome = models.TextField(blank=True)
     safety_notes = models.TextField(blank=True)
     equipment = models.JSONField(default=list, blank=True)
+    requires_note = models.BooleanField(default=False)
+    requires_photo = models.BooleanField(default=False)
     schedule_defaults = models.JSONField(default=dict, blank=True)
     active = models.BooleanField(default=True)
 

@@ -181,6 +181,8 @@ class CareTaskTemplateSerializer(serializers.ModelSerializer):
             "expected_outcome",
             "safety_notes",
             "equipment",
+            "requires_note",
+            "requires_photo",
             "schedule_defaults",
             "active",
             "created_at",

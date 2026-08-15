@@ -559,6 +559,20 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
 .frequency-options span { min-height: 42px; display: grid; place-items: center; padding: 7px; border: 1px solid var(--border); border-radius: 9px; background: white; color: var(--muted); }
 .frequency-options label.selected span { color: var(--green); border-color: var(--green-2); background: var(--mint); box-shadow: inset 0 0 0 1px var(--green-2); }
 .frequency-options input:focus-visible + span { outline: 3px solid rgba(62,141,125,.22); outline-offset: 2px; }
+.completion-policy { margin:18px 0 0; padding:14px; border:1px solid #d5e5df; border-radius:13px; background:#f9fcfb; }
+.completion-policy legend { padding-inline:6px; color:var(--green); font-size:11px; font-weight:800; }
+.completion-policy > p { margin:0 0 11px; color:var(--muted); font-size:10px; line-height:1.55; }
+.completion-policy > div { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.completion-policy > div > label { position:relative; min-height:72px; margin:0; cursor:pointer; }
+.completion-policy input[type="radio"] { position:absolute; opacity:0; pointer-events:none; }
+.completion-policy label > span { height:100%; display:flex; flex-direction:column; justify-content:center; padding:11px 13px; border:1px solid var(--border); border-radius:10px; color:var(--ink); background:white; }
+.completion-policy label > span strong, .completion-policy label > span small { display:block; }
+.completion-policy label > span small { margin-top:4px; color:var(--muted); font-size:9px; font-weight:500; line-height:1.45; }
+.completion-policy label.selected > span { border-color:var(--green-2); background:var(--mint); box-shadow:inset 0 0 0 1px var(--green-2); }
+.completion-policy input:focus-visible + span { outline:3px solid rgba(62,141,125,.22); outline-offset:2px; }
+.completion-policy > .field-hint { display:block; margin-top:10px; }
+.completion-policy.compact { margin-block:8px 0; }
+.completion-photo-policy { margin-top:13px !important; min-height:44px; }
 .weekday-picker, .window-fields { border: 1px solid var(--border); border-radius: 11px; padding: 13px; margin: 16px 0; }
 .weekday-picker legend, .window-fields legend { color: var(--green); padding: 0 6px; font-size: 9px; font-weight: 800; }
 .weekday-picker { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -698,6 +712,7 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
   .builder-form { padding: 0 19px 20px; }
   .builder-panel { min-height: 0; }
   .frequency-options { grid-template-columns: 1fr 1fr; }
+  .completion-policy > div { grid-template-columns:1fr; }
   .weekday-picker { grid-template-columns: repeat(4, 1fr); }
   .occurrence-preview ol { grid-template-columns: 1fr 1fr; }
   .review-grid { grid-template-columns: 1fr; }

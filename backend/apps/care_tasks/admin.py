@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import CareTaskTemplate, CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
 
 
 class TaskScheduleInline(admin.TabularInline):
@@ -19,3 +19,4 @@ class TaskAdmin(admin.ModelAdmin):
 admin.site.register(TaskOccurrence)
 admin.site.register(CompletionLog)
 admin.site.register(CompletionCorrection)
+admin.site.register(CareTaskTemplate)

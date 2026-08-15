@@ -91,6 +91,8 @@ export type OrganizationTaskTemplate = {
   expected_outcome: string
   safety_notes: string
   equipment: string[]
+  requires_note: boolean
+  requires_photo: boolean
   schedule_defaults: Partial<TaskSchedule>
   active: boolean
 }
