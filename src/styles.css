@@ -611,6 +611,15 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
 .builder-actions { position: sticky; bottom: -26px; display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; padding: 15px 0 0; margin-top: 10px; background: linear-gradient(to bottom, rgba(255,255,255,.82), white 25%); border-top: 1px solid var(--border); }
 .task-form .builder-actions button { width: auto; margin: 0; padding-inline: 16px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .builder-actions svg { width: 17px; }
+.schedule-status-filter { display:flex; align-items:center; gap:8px; padding:12px 18px; overflow-x:auto; border-bottom:1px solid var(--border); scrollbar-width:thin; }
+.schedule-status-filter button { min-height:38px; display:inline-flex; flex:0 0 auto; align-items:center; gap:8px; padding:0 11px; border:1px solid #d8e4df; border-radius:999px; color:#526a64; background:#fff; font-size:10px; font-weight:800; transition-property:border-color, background-color, color, box-shadow; transition-duration:.16s; transition-timing-function:ease-out; }
+.schedule-status-filter button:hover { border-color:#a9cfc4; background:#f7fbf9; }
+.schedule-status-filter button.active { color:#fff; border-color:var(--green-2); background:var(--green-2); box-shadow:0 4px 12px rgba(38,116,100,.14); }
+.schedule-status-filter button b { min-width:21px; height:21px; display:grid; place-items:center; padding-inline:5px; border-radius:999px; color:#42675f; background:#edf5f2; font-size:9px; font-variant-numeric:tabular-nums; }
+.schedule-status-filter button.active b { color:var(--green); background:#fff; }
+.week-event-chip.pending, .month-task-chip.pending, .week-event-chip.delayed, .month-task-chip.delayed { border-color:#e7c888; background:#fff8e9; }
+.week-event-chip.missed, .month-task-chip.missed { border-color:#efb9ae; background:#fff1ee; }
+.week-event-chip.done, .month-task-chip.done { border-color:#b8dacf; background:#edf8f4; }
 .toast { position: fixed; z-index: 200; right: 25px; bottom: 25px; background: var(--green); color: white; border-radius: 11px; box-shadow: 0 15px 45px rgba(10,40,32,.25); padding: 13px 17px; display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 600; animation: toast-in .25s ease-out; }
 @keyframes toast-in { from { transform: translateY(15px); opacity: 0; } }
 .bottom-nav { display: none; }
@@ -713,6 +722,7 @@ html[dir="rtl"] .dose-hero h2, html[dir="rtl"] .dose-hero p { direction:ltr; uni
   .builder-panel { min-height: 0; }
   .frequency-options { grid-template-columns: 1fr 1fr; }
   .completion-policy > div { grid-template-columns:1fr; }
+  .schedule-status-filter { padding-inline:12px; }
   .weekday-picker { grid-template-columns: repeat(4, 1fr); }
   .occurrence-preview ol { grid-template-columns: 1fr 1fr; }
   .review-grid { grid-template-columns: 1fr; }
