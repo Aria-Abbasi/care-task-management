@@ -68,6 +68,10 @@ class CareNotification(TimeStampedModel):
         constraints = [
             models.UniqueConstraint(fields=["recipient", "kind", "source_type", "source_id"], name="unique_recipient_care_alert")
         ]
+        indexes = [
+            models.Index(fields=["recipient", "state"], name="care_notif_recip_state_idx"),
+            models.Index(fields=["source_type", "source_id"], name="care_notif_source_idx"),
+        ]
 
 
 class NotificationPreference(TimeStampedModel):
@@ -145,6 +149,7 @@ class NotificationDelivery(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
         constraints = [models.UniqueConstraint(fields=["notification", "channel"], name="unique_notification_delivery_channel")]
+        indexes = [models.Index(fields=["status", "next_attempt_at"], name="notif_deliv_status_next_idx")]
 
 
 class WorkerHeartbeat(models.Model):

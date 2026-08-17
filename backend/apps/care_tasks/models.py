@@ -112,6 +112,7 @@ class TaskOccurrence(TimeStampedModel):
     class Meta:
         ordering = ["scheduled_at"]
         constraints = [models.UniqueConstraint(fields=["task", "scheduled_at"], name="unique_task_scheduled_occurrence")]
+        indexes = [models.Index(fields=["status", "scheduled_at"], name="task_occ_status_sched_idx")]
 
     def __str__(self):
         return f"{self.task.title} at {self.scheduled_at}"

@@ -83,8 +83,8 @@ class PatientViewSet(viewsets.ModelViewSet):
                 scheduled_at__gte=day_start,
                 scheduled_at__lt=day_end,
             )
-            .select_related("task", "completed_by")
-            .prefetch_related("task__schedules")
+            .select_related("task", "task__assigned_to", "completed_by", "schedule", "completion", "completion__completed_by")
+            .prefetch_related("task__schedules", "corrections", "corrections__corrected_by")
         )
         counts = occurrences.aggregate(
             total=Count("id"),
@@ -92,13 +92,11 @@ class PatientViewSet(viewsets.ModelViewSet):
             overdue=Count("id", filter=Q(status=TaskOccurrence.Status.MISSED)),
             pending=Count("id", filter=Q(status__in=[TaskOccurrence.Status.PENDING, TaskOccurrence.Status.DELAYED])),
         )
-        latest_vitals = []
-        recorded_types = list(patient.vital_records.order_by().values_list("type", flat=True).distinct())
-        all_types = list(dict.fromkeys(list(VitalRecord.Type.values) + recorded_types))
-        for vital_type in all_types:
-            record = patient.vital_records.filter(type=vital_type).first()
-            if record:
-                latest_vitals.append(record)
+        latest_vitals_dict = {}
+        for record in patient.vital_records.select_related("recorded_by").order_by("-recorded_at"):
+            if record.type not in latest_vitals_dict:
+                latest_vitals_dict[record.type] = record
+        latest_vitals = list(latest_vitals_dict.values())
 
         medications = Medication.objects.filter(patient=patient, active=True).prefetch_related("schedules")
         dose_logs = (

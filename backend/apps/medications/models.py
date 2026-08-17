@@ -106,6 +106,7 @@ class DoseLog(TimeStampedModel):
     class Meta:
         ordering = ["scheduled_at"]
         constraints = [models.UniqueConstraint(fields=["medication", "scheduled_at"], name="unique_medication_scheduled_dose")]
+        indexes = [models.Index(fields=["status", "scheduled_at"], name="doselog_status_sched_idx")]
 
 
 class DoseCorrection(TimeStampedModel):

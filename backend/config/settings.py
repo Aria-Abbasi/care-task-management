@@ -133,15 +133,15 @@ CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BEAT_SCHEDULE = {
-    "maintain-task-occurrences-every-minute": {
+    "maintain-task-occurrences": {
         "task": "apps.care_tasks.tasks.maintain_task_occurrences",
-        "schedule": 60.0,
+        "schedule": 300.0,
     },
-    "scan-overdue-care-every-minute": {
+    "scan-overdue-care": {
         "task": "apps.safety.tasks.scan_overdue_care",
-        "schedule": 60.0,
+        "schedule": 120.0,
     },
-    "dispatch-notifications-every-minute": {
+    "dispatch-notifications": {
         "task": "apps.safety.tasks.dispatch_pending_notifications",
         "schedule": 60.0,
     },

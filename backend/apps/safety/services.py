@@ -76,8 +76,10 @@ def _upsert_alert(*, kind, source, due_at, now):
                 "due_at": due_at,
             },
         )
-        created += int(was_created)
-        if not was_created and level > notification.escalation_level:
+        if was_created:
+            created += 1
+            queue_notification_deliveries(notification, now=now)
+        elif level > notification.escalation_level:
             notification.escalation_level = level
             notification.severity = severity
             notification.message = message
@@ -88,7 +90,7 @@ def _upsert_alert(*, kind, source, due_at, now):
                 update_fields=["escalation_level", "severity", "message", "state", "acknowledged_at", "snoozed_until", "updated_at"]
             )
             escalated += 1
-        queue_notification_deliveries(notification, now=now)
+            queue_notification_deliveries(notification, now=now)
     return created, escalated
 
 
