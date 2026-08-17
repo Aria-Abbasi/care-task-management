@@ -1,6 +1,17 @@
 from rest_framework import serializers
 
-from .models import AdvanceDirective, Allergy, CarePlan, ClinicalDocument, Diagnosis, EmergencyContact, VitalThreshold, WoundRecord
+from .models import (
+    AdvanceDirective,
+    Allergy,
+    CarePlan,
+    ClinicalDocument,
+    Diagnosis,
+    EmergencyContact,
+    FoodIntakeLog,
+    MealDefinition,
+    VitalThreshold,
+    WoundRecord,
+)
 
 
 class PatientNamedSerializer(serializers.ModelSerializer):
@@ -194,3 +205,76 @@ class VitalThresholdSerializer(PatientNamedSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "configured_by", "created_at", "updated_at"]
+
+
+class MealDefinitionSerializer(PatientNamedSerializer):
+    created_by_name = serializers.CharField(source="created_by.display_name", read_only=True)
+    meal_type_display = serializers.CharField(source="get_meal_type_display", read_only=True)
+
+    class Meta:
+        model = MealDefinition
+        fields = [
+            "id",
+            "patient",
+            "patient_name",
+            "name",
+            "meal_type",
+            "meal_type_display",
+            "instructions",
+            "ingredients",
+            "dietary_tags",
+            "target_time",
+            "active",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+
+    def validate_name(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("Meal name cannot be empty.")
+        return cleaned
+
+
+class FoodIntakeLogSerializer(PatientNamedSerializer):
+    recorded_by_name = serializers.CharField(source="recorded_by.display_name", read_only=True)
+
+    class Meta:
+        model = FoodIntakeLog
+        fields = [
+            "id",
+            "patient",
+            "patient_name",
+            "meal_definition",
+            "meal_type",
+            "meal_name",
+            "portion_consumed",
+            "recorded_at",
+            "recorded_by",
+            "recorded_by_name",
+            "notes",
+            "client_reference",
+            "provenance",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "recorded_by", "created_at", "updated_at"]
+
+    def validate_portion_consumed(self, value):
+        if not (0 <= value <= 100):
+            raise serializers.ValidationError("Portion consumed must be between 0 and 100%.")
+        return value
+
+    def validate(self, attrs):
+        meal_name = attrs.get("meal_name", "").strip()
+        meal_def = attrs.get("meal_definition")
+        if not meal_name and meal_def:
+            attrs["meal_name"] = meal_def.name
+            if not attrs.get("meal_type"):
+                attrs["meal_type"] = meal_def.meal_type
+        if not attrs.get("meal_name", "").strip():
+            raise serializers.ValidationError({"meal_name": "Meal name is required."})
+        return attrs

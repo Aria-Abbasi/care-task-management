@@ -248,6 +248,44 @@ export type VitalRecord = {
   provenance: Record<string, unknown>
 }
 
+export type MealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK' | 'HYDRATION'
+
+export type MealDefinition = {
+  id: number
+  patient: number
+  patient_name: string
+  name: string
+  meal_type: MealType
+  meal_type_display: string
+  instructions: string
+  ingredients: string[]
+  dietary_tags: string[]
+  target_time: string | null
+  active: boolean
+  created_by: number | null
+  created_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+export type FoodIntakeLog = {
+  id: number
+  patient: number
+  patient_name: string
+  meal_definition: number | null
+  meal_type: MealType
+  meal_name: string
+  portion_consumed: number
+  recorded_at: string
+  recorded_by: number | null
+  recorded_by_name: string
+  notes: string
+  client_reference: string | null
+  provenance: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export type DashboardResponse = {
   date: string
   patient: Patient

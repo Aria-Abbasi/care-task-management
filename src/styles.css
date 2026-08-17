@@ -1481,3 +1481,42 @@ html[dir="rtl"] .hour-event { text-align:end; }
   .audit-row { grid-template-columns: auto 1fr; }
   .audit-row b { grid-column: 2; justify-self: start; }
 }
+
+/* Meals & Clinical Nutrition Styles */
+.meal-cards-list, .intake-logs-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.meal-card { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+.meal-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04); }
+.meal-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.meal-card-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.meal-card-title-group h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink); }
+.badge-pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.02em; }
+.badge-breakfast { background: #fef3c7; color: #92400e; }
+.badge-lunch { background: #e0e7ff; color: #3730a3; }
+.badge-dinner { background: #dbeafe; color: #1e40af; }
+.badge-snack { background: #f3e8ff; color: #6b21a8; }
+.badge-hydration { background: #cffafe; color: #155e75; }
+.meal-time { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dietary-tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 7px; border-radius: 4px; background: #f1f5f9; color: #475569; font-weight: 500; }
+.meal-ingredients { font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+.meal-ingredients strong { color: var(--ink); }
+.recipe-toggle-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--green-2); padding: 4px 0; border: none; background: none; cursor: pointer; }
+.recipe-instructions-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.recipe-instructions-box p { margin: 6px 0 0 0; white-space: pre-wrap; }
+.compact-btn { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+
+/* Intake tracking log items */
+.intake-log-item { background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.intake-log-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.intake-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.portion-indicator { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.portion-green { background: #dcfce7; color: #166534; }
+.portion-yellow { background: #fef9c3; color: #854d0e; }
+.portion-red { background: #fee2e2; color: #991b1b; }
+.meal-type-tag { font-size: 11px; color: var(--muted); background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+.intake-notes { font-size: 12px; color: var(--ink-2); margin: 0; background: #fafafa; padding: 6px 10px; border-radius: 6px; }
+.intake-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); border-top: 1px solid #f1f5f9; padding-top: 6px; }
+.portion-chips { display: flex; gap: 6px; margin-top: 6px; margin-bottom: 6px; }
+.portion-chips button { flex: 1; padding: 6px 4px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.portion-chips button.active { background: var(--green-2); color: #ffffff; border-color: var(--green-2); }
+

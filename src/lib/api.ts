@@ -1,6 +1,6 @@
 import { listMutations, queueMutation, removeMutation, updateMutation, type QueuedMutation } from './offline'
 import { createContractTransport, type ApiPath } from './generated-api'
-import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
+import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, FoodIntakeLog, MealDefinition, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
 
 const API_ROOT = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 const SESSION_KEY = 'haven.session'
@@ -254,6 +254,28 @@ export const getVitalOptions = async (token: string) =>
 
 export const createCustomVitalType = async (token: string, payload: Partial<CustomVitalType>) =>
   request<CustomVitalType>('/vital-types/', { method: 'POST', body: JSON.stringify(payload) }, token)
+
+export const getMealDefinitions = async (token: string, patientId: number) =>
+  (await request<Paginated<MealDefinition>>(`/meal-definitions/?patient=${patientId}&active=true&ordering=target_time`, {}, token)).results
+
+export const createMealDefinition = async (token: string, payload: Partial<MealDefinition>) =>
+  request<MealDefinition>('/meal-definitions/', { method: 'POST', body: JSON.stringify(payload) }, token)
+
+export const updateMealDefinition = async (token: string, id: number, payload: Partial<MealDefinition>) =>
+  request<MealDefinition>(`/meal-definitions/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+
+export const deactivateMealDefinition = async (token: string, id: number) =>
+  request<void>(`/meal-definitions/${id}/`, { method: 'DELETE' }, token)
+
+export const getFoodIntakeLogs = async (token: string, patientId: number, start?: string, end?: string) => {
+  let url = `/food-intake-logs/?patient=${patientId}&ordering=-recorded_at`
+  if (start) url += `&recorded_at__gte=${encodeURIComponent(start)}`
+  if (end) url += `&recorded_at__lt=${encodeURIComponent(end)}`
+  return (await request<Paginated<FoodIntakeLog>>(url, {}, token)).results
+}
+
+export const createFoodIntakeLog = async (token: string, payload: Record<string, unknown>) =>
+  request<FoodIntakeLog>('/food-intake-logs/', { method: 'POST', body: JSON.stringify(payload) }, token)
 
 export type MutationResult<T> = { queued: boolean; data?: T; conflict?: boolean }
 

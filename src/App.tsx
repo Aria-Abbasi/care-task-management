@@ -57,7 +57,7 @@ import type {
   Session, ShiftAssignment, TaskOccurrence, VitalRecord, VitalTypeOption,
 } from './lib/types'
 
-type View = 'today' | 'shift' | 'schedule' | 'tasks' | 'medications' | 'clinical' | 'health' | 'timeline' | 'reports' | 'messages' | 'safety' | 'admin' | 'settings'
+type View = 'today' | 'shift' | 'schedule' | 'tasks' | 'meals' | 'medications' | 'clinical' | 'health' | 'timeline' | 'reports' | 'messages' | 'safety' | 'admin' | 'settings'
 type TaskStatus = 'done' | 'overdue' | 'now' | 'upcoming'
 
 type CareTask = {
@@ -83,6 +83,7 @@ const categoryFromApi: Record<string, CareTask['category']> = {
 }
 
 const HealthView = lazy(() => import('./features/HealthView'))
+const MealsView = lazy(() => import('./features/MealsView'))
 const MessagesView = lazy(() => import('./features/MessagesView'))
 const ReportsView = lazy(() => import('./features/ReportsView'))
 const TimelineView = lazy(() => import('./features/TimelineView'))
@@ -90,11 +91,11 @@ const SecuritySettingsView = lazy(() => import('./features/SettingsView'))
 const ClinicalProfileView = lazy(() => import('./features/ClinicalProfileView'))
 const AdminView = lazy(() => import('./features/AdminView'))
 const TaskManagementView = lazy(() => import('./features/TaskManagementView'))
-const viewIds: View[] = ['today', 'shift', 'schedule', 'tasks', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'admin', 'settings']
+const viewIds: View[] = ['today', 'shift', 'schedule', 'tasks', 'meals', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'admin', 'settings']
 const roleViews: Record<ApiUser['role'], View[]> = {
-  FAMILY: ['today', 'health', 'timeline', 'reports', 'messages', 'settings'],
-  DOCTOR: ['today', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'settings'],
-  CAREGIVER: ['today', 'shift', 'schedule', 'tasks', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'settings'],
+  FAMILY: ['today', 'meals', 'health', 'timeline', 'reports', 'messages', 'settings'],
+  DOCTOR: ['today', 'meals', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'settings'],
+  CAREGIVER: ['today', 'shift', 'schedule', 'tasks', 'meals', 'medications', 'clinical', 'health', 'timeline', 'reports', 'messages', 'safety', 'settings'],
   ADMIN: viewIds,
 }
 const canAccessView = (role: ApiUser['role'], view: View) => roleViews[role].includes(view)
@@ -154,6 +155,7 @@ const navigation: { id: View; label: string; icon: typeof Home }[] = [
   { id: 'shift', label: 'My shift', icon: Sun },
   { id: 'schedule', label: 'Schedule', icon: CalendarDays },
   { id: 'tasks', label: 'Tasks', icon: ClipboardCheck },
+  { id: 'meals', label: 'Food & Meals', icon: Utensils },
   { id: 'medications', label: 'Medications', icon: Pill },
   { id: 'clinical', label: 'Clinical profile', icon: Stethoscope },
   { id: 'health', label: 'Health', icon: HeartPulse },
@@ -170,6 +172,7 @@ const persianNavigationLabels: Record<View, string> = {
   shift: 'شیفت من',
   schedule: 'برنامه',
   tasks: 'وظایف',
+  meals: 'غذا و تغذیه',
   medications: 'داروها',
   clinical: 'پرونده بالینی',
   health: 'سلامت',
@@ -756,6 +759,7 @@ function App() {
           {view === 'schedule' && <Schedule session={session} patient={patient} tasks={tasks} locale={locale} selectedDate={selectedDate} onDate={(date) => refreshWorkspace(session, patient.id, date)} onTask={setSelectedTask} onAdd={() => setShowAddTask(true)} />}
           {view === 'medications' && <Medications session={session} patient={patient} medications={dashboard.medications} doses={dashboard.dose_logs} onDose={setSelectedDose} onPrn={setSelectedPrn} notify={notify} onRefresh={() => refreshWorkspace(session, patient.id, selectedDate)} locale={locale} />}
           <Suspense fallback={<div className="main-card loading-feature" role="status"><RefreshCw className="spinning" /> {isPersian ? 'در حال بارگذاری فضای کاری…' : 'Loading workspace…'}</div>}>
+            {view === 'meals' && <MealsView session={session} patient={patient} canManage={user.role !== 'FAMILY'} notify={notify} locale={locale} />}
             {view === 'health' && <HealthView session={session} patient={patient} latest={dashboard.latest_vitals} onRecord={() => setShowVital(true)} canRecord={user.role !== 'FAMILY'} locale={locale} />}
             {view === 'timeline' && <TimelineView session={session} patient={patient} dashboard={dashboard} locale={locale} />}
             {view === 'clinical' && <ClinicalProfileView session={session} patient={patient} locale={locale} />}
@@ -1032,7 +1036,7 @@ function TaskRow({ task, onClick }: { task: CareTask; onClick: () => void }) {
   return <button className="task-row" onClick={onClick}><time dir="ltr">{task.time}</time><TaskIcon task={task} /><span className="task-row-copy"><strong><bdi>{task.title}</bdi></strong><small><bdi>{task.detail}</bdi></small></span><ChevronRight /></button>
 }
 
-function Modal({ children, onClose, label = 'Care dialog', locale = 'en' }: { children: ReactNode; onClose: () => void; label?: string; locale?: string }) {
+export function Modal({ children, onClose, label = 'Care dialog', locale = 'en' }: { children: ReactNode; onClose: () => void; label?: string; locale?: string }) {
   const dialogRef = useRef<HTMLElement>(null)
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null

@@ -152,3 +152,52 @@ class VitalThreshold(TimeStampedModel):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["patient", "vital_type"], name="unique_patient_vital_threshold")]
+
+
+class MealDefinition(TimeStampedModel):
+    class MealType(models.TextChoices):
+        BREAKFAST = "BREAKFAST", "Breakfast"
+        LUNCH = "LUNCH", "Lunch"
+        DINNER = "DINNER", "Dinner"
+        SNACK = "SNACK", "Snack"
+        HYDRATION = "HYDRATION", "Hydration"
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="meal_definitions")
+    name = models.CharField(max_length=160)
+    meal_type = models.CharField(max_length=24, choices=MealType.choices, default=MealType.LUNCH)
+    instructions = models.TextField(blank=True, help_text="Recipe and cooking instructions, dietary restrictions")
+    ingredients = models.JSONField(default=list, blank=True)
+    dietary_tags = models.JSONField(default=list, blank=True)
+    target_time = models.TimeField(null=True, blank=True)
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="created_meals")
+
+    class Meta:
+        ordering = ["target_time", "name"]
+
+    def __str__(self):
+        return f"{self.patient} · {self.get_meal_type_display()}: {self.name}"
+
+
+class FoodIntakeLog(TimeStampedModel):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="food_intake_logs")
+    meal_definition = models.ForeignKey(
+        MealDefinition, on_delete=models.SET_NULL, null=True, blank=True, related_name="intake_logs"
+    )
+    meal_type = models.CharField(max_length=24, choices=MealDefinition.MealType.choices, default=MealDefinition.MealType.LUNCH)
+    meal_name = models.CharField(max_length=160)
+    portion_consumed = models.PositiveSmallIntegerField(
+        default=100,
+        help_text="Percentage consumed (0-100%)",
+    )
+    recorded_at = models.DateTimeField(db_index=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="recorded_intakes")
+    notes = models.TextField(blank=True)
+    client_reference = models.UUIDField(null=True, blank=True, unique=True)
+    provenance = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-recorded_at"]
+
+    def __str__(self):
+        return f"{self.patient} · {self.meal_name} ({self.portion_consumed}%) at {self.recorded_at}"

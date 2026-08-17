@@ -7,7 +7,18 @@ from apps.accounts.models import User
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
 
-from .models import AdvanceDirective, Allergy, CarePlan, ClinicalDocument, Diagnosis, EmergencyContact, VitalThreshold, WoundRecord
+from .models import (
+    AdvanceDirective,
+    Allergy,
+    CarePlan,
+    ClinicalDocument,
+    Diagnosis,
+    EmergencyContact,
+    FoodIntakeLog,
+    MealDefinition,
+    VitalThreshold,
+    WoundRecord,
+)
 from .serializers import (
     AdvanceDirectiveSerializer,
     AllergySerializer,
@@ -15,6 +26,8 @@ from .serializers import (
     ClinicalDocumentSerializer,
     DiagnosisSerializer,
     EmergencyContactSerializer,
+    FoodIntakeLogSerializer,
+    MealDefinitionSerializer,
     VitalThresholdSerializer,
     WoundRecordSerializer,
 )
@@ -182,3 +195,30 @@ class VitalThresholdViewSet(ClinicalWriteRestrictedMixin, PatientScopedViewSet):
     queryset = VitalThreshold.objects.select_related("patient", "configured_by")
     serializer_class = VitalThresholdSerializer
     filterset_fields = ["patient", "vital_type", "active"]
+
+
+class MealDefinitionViewSet(CareTeamWriteRestrictedMixin, PatientScopedViewSet):
+    queryset = MealDefinition.objects.select_related("patient", "created_by")
+    serializer_class = MealDefinitionSerializer
+    filterset_fields = ["patient", "meal_type", "active"]
+    ordering_fields = ["target_time", "name", "created_at"]
+
+
+class FoodIntakeLogViewSet(PatientScopedViewSet):
+    queryset = FoodIntakeLog.objects.select_related("patient", "meal_definition", "recorded_by")
+    serializer_class = FoodIntakeLogSerializer
+    filterset_fields = ["patient", "meal_type", "meal_definition"]
+    ordering_fields = ["recorded_at", "created_at"]
+
+    def perform_create(self, serializer):
+        patient = serializer.validated_data["patient"]
+        self._validate_patient(patient)
+        log = serializer.save(recorded_by=self.request.user)
+        record_audit(
+            actor=self.request.user,
+            patient=patient,
+            action="FOOD_INTAKE_RECORDED",
+            instance=log,
+            summary=f"Recorded meal intake: {log.meal_name} ({log.portion_consumed}%)",
+            metadata={"portion_consumed": log.portion_consumed, "meal_type": log.meal_type},
+        )

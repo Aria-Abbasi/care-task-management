@@ -23,6 +23,8 @@ from apps.clinical.views import (
     ClinicalDocumentViewSet,
     DiagnosisViewSet,
     EmergencyContactViewSet,
+    FoodIntakeLogViewSet,
+    MealDefinitionViewSet,
     VitalThresholdViewSet,
     WoundRecordViewSet,
 )
@@ -83,6 +85,8 @@ router.register("advance-directives", AdvanceDirectiveViewSet, basename="advance
 router.register("clinical-documents", ClinicalDocumentViewSet, basename="clinical-document")
 router.register("wound-records", WoundRecordViewSet, basename="wound-record")
 router.register("vital-thresholds", VitalThresholdViewSet, basename="vital-threshold")
+router.register("meal-definitions", MealDefinitionViewSet, basename="meal-definition")
+router.register("food-intake-logs", FoodIntakeLogViewSet, basename="food-intake-log")
 router.register("conversations", ConversationViewSet, basename="conversation")
 router.register("messages", MessageViewSet, basename="message")
 router.register("shift-assignments", ShiftAssignmentViewSet, basename="shift-assignment")
