@@ -148,8 +148,11 @@ main { margin-left: 260px; min-height: 100vh; }
 .patient-hero .text-button { color: #d2e6e0; white-space: nowrap; z-index: 1; }
 
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(285px, .75fr); gap: 25px; }
-.timeline-column, .side-card, .main-card { background: var(--card); border: 1px solid var(--border); box-shadow: 0 7px 25px rgba(32,55,49,.035); border-radius: 15px; }
+.timeline-column, .side-card, .main-card { background: var(--card); border: 1px solid var(--border); box-shadow: 0 4px 20px rgba(32,55,49,.035); border-radius: 16px; }
+.main-card { padding: 24px; min-width: 0; }
+.main-card.table-card { padding: 0; }
 .timeline-column { padding: 24px; }
+.side-card { padding: 20px; }
 .section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .section-title h2 { margin: 0 0 3px; font-size: 20px; }
 .section-title p { margin: 0; color: var(--muted); font-size: 11px; }
@@ -184,13 +187,18 @@ main { margin-left: 260px; min-height: 100vh; }
 .overdue-card em { font-size: 10px; line-height: 1.45; color: var(--coral); font-style: normal; unicode-bidi: plaintext; }
 .overdue-card > svg { color: #aeb7b4; width: 17px; }
 .up-next { margin-top: 22px; }
-.empty-care { min-height: 130px; border: 1px dashed #ccd8d3; border-radius: 12px; margin-top: 14px; padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); }
-.empty-care svg { width: 25px; color: var(--green-2); margin-bottom: 8px; }
-.empty-care strong { color: var(--ink); font-size: 12px; }
-.empty-care p { font-size: 9px; margin: 5px 0 0; }
-.subsection-heading { display: flex; align-items: center; justify-content: space-between; }
-.subsection-heading h3 { font-size: 14px; margin: 0; }
-.subsection-heading button { border: 0; background: transparent; color: var(--green-2); font-size: 10px; font-weight: 700; display: flex; align-items: center; }
+.empty-care { min-height: 170px; border: 1.5px dashed #cbd5e1; background: #f8fafc; border-radius: 14px; margin-top: 14px; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); gap: 8px; width: 100%; box-sizing: border-box; }
+.empty-care.compact { min-height: 150px; padding: 32px 16px; }
+.empty-care > svg { width: 32px; height: 32px; color: var(--green-2); margin-bottom: 4px; flex-shrink: 0; }
+.empty-care strong { color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.4; max-width: 380px; }
+.empty-care p { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; max-width: 340px; }
+.empty-care .primary-button, .empty-care .secondary-button { margin-top: 10px; }
+.subsection-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; width: 100%; }
+.subsection-heading > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.subsection-heading h3 { font-size: 16px; font-weight: 700; color: var(--ink); margin: 0; line-height: 1.3; }
+.subsection-heading p { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.4; }
+.subsection-heading button.text-button { border: 0; background: transparent; color: var(--green-2); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s ease; }
+.subsection-heading button.text-button:hover { background: #eef7f4; }
 .task-row { border: 0; border-top: 1px solid #ecece5; background: transparent; width: 100%; min-height: 68px; display: grid; grid-template-columns: 50px auto minmax(0, 1fr) auto; align-items: center; gap: 12px; text-align: start; }
 .task-row time { font-size: 11px; font-weight: 700; }
 .task-row-copy { min-width: 0; }
@@ -951,7 +959,7 @@ html[dir="rtl"] .top-profile-menu { right:auto; left:0; text-align:right; }
 html[dir="rtl"] .top-profile-links button, html[dir="rtl"] .top-profile-signout { text-align:right; }
 html[dir="rtl"] .top-profile-links button svg:last-child { margin-left:0; margin-right:auto; transform:rotate(180deg); }
 html[dir="rtl"] .notification-button i { right:auto; left:7px; }
-html[dir="rtl"] .breadcrumb svg, html[dir="rtl"] .text-button svg, html[dir="rtl"] .subsection-heading button svg, html[dir="rtl"] .overdue-card > svg, html[dir="rtl"] .family-card button svg { transform:rotate(180deg); }
+html[dir="rtl"] .breadcrumb svg, html[dir="rtl"] .overdue-card > svg, html[dir="rtl"] .family-card button svg { transform:rotate(180deg); }
 html[dir="rtl"] .role-context, html[dir="rtl"] .shift-card { text-align:right; }
 html[dir="rtl"] .shift-card strong { text-align:right; }
 html[dir="rtl"] .search-field input { text-align:right; }
@@ -1152,8 +1160,8 @@ html[dir="rtl"] .admin-row-actions { flex-direction:row-reverse; }
 .med-warning { display:flex; gap:7px; color:#a63d39; background:#fff2f0; border-radius:8px; padding:9px; margin:10px 0; font-size:11px; }
 .med-warning svg { width:16px; flex:0 0 auto; }
 .med-warning strong, .med-warning small { display:block; }
-.med-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-.med-actions button { min-height:38px; padding:0 11px; font-size:10px; }
+.med-actions { display:inline-flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.med-actions button { min-height:40px; padding:0 16px; font-size:13px; font-weight:600; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
 .order-review { padding:20px; margin-bottom:20px; border-color:#e9c26d; }
 
 @media (max-width: 720px) {
@@ -1246,9 +1254,10 @@ html[dir="rtl"] .admin-row-actions { flex-direction:row-reverse; }
 .content:has(.audit-filters) .page-header .secondary-button:has(.lucide-refresh-cw) svg { transition:transform .35s ease; }
 .content:has(.audit-filters) .page-header .secondary-button:has(.lucide-refresh-cw):hover { border-color:#9dcfc0; box-shadow:0 4px 12px rgba(18, 91, 75, .10); transform:translateY(-1px); }
 .content:has(.audit-filters) .page-header .secondary-button:has(.lucide-refresh-cw):hover svg { transform:rotate(120deg); }
-.content:has(.audit-filters) .page-header .secondary-button:has(.lucide-refresh-cw):active svg { animation:spin .7s linear infinite; }
-.audit-filters { display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin:0 0 18px; padding:10px; border:1px solid var(--border); border-radius:13px; background:#fff; }
-.audit-filters button { min-height:32px; border:1px solid #d8e3df; border-radius:16px; padding:0 11px; color:#5d7770; background:#fff; font-size:10px; font-weight:800; }.audit-filters button.active { color:#fff; border-color:var(--green-2); background:var(--green-2); }
+.audit-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 20px; padding:10px 14px; border:1px solid var(--border); border-radius:14px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,0.02); }
+.audit-filters button { min-height:36px; border:1px solid #e2e8f0; border-radius:9999px; padding:0 16px; color:#475569; background:#fff; font-size:13px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:all 0.15s ease; }
+.audit-filters button:hover { background:#f8fafc; border-color:#cbd5e1; color:var(--ink); }
+.audit-filters button.active { color:#fff; border-color:var(--green); background:var(--green); box-shadow:0 2px 8px rgba(18,58,50,0.18); }
 html[dir="rtl"] .content:has(.audit-filters) .page-header { text-align:right; }
 html[dir="rtl"] .content:has(.audit-filters) .audit-filters { justify-content:flex-start; }
 @media (max-width:640px) { .content:has(.audit-filters) .page-header { align-items:stretch; padding:16px; } .content:has(.audit-filters) .page-header .med-actions { width:100%; } .content:has(.audit-filters) .page-header .med-actions button { flex:1; } .audit-filters { padding:8px; } }
@@ -1483,10 +1492,10 @@ html[dir="rtl"] .hour-event { text-align:end; }
 }
 
 /* Meals & Clinical Nutrition Styles */
-.meal-cards-list, .intake-logs-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
-.meal-card { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: box-shadow 0.2s ease, border-color 0.2s ease; }
-.meal-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04); }
-.meal-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.meal-cards-list, .intake-logs-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.meal-card { background: #ffffff; border: 1px solid var(--border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+.meal-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05); }
+.meal-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; width: 100%; }
 .meal-card-title-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .meal-card-title-group h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink); }
 .badge-pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.02em; }
@@ -1503,11 +1512,12 @@ html[dir="rtl"] .hour-event { text-align:end; }
 .recipe-toggle-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--green-2); padding: 4px 0; border: none; background: none; cursor: pointer; }
 .recipe-instructions-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--ink); }
 .recipe-instructions-box p { margin: 6px 0 0 0; white-space: pre-wrap; }
-.compact-btn { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+.compact-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; font-size: 12px; font-weight: 600; min-height: 34px; border-radius: 8px; cursor: pointer; }
+.compact-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
 
 /* Intake tracking log items */
-.intake-log-item { background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-.intake-log-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.intake-log-item { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.intake-log-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
 .intake-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .portion-indicator { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
 .portion-green { background: #dcfce7; color: #166534; }
