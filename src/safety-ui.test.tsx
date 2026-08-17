@@ -129,7 +129,7 @@ describe('safe caregiver dialogs', () => {
     expect(reports).toContain('Read-only family view')
   })
 
-  it('shows task details without care-recording controls to family accounts', () => {
+  it('allows family members to record task outcome while hiding delay or skip controls', () => {
     const task = {
       id: 12,
       taskId: 3,
@@ -158,12 +158,48 @@ describe('safe caregiver dialogs', () => {
       },
     } as ComponentProps<typeof TaskModal>['task']
     const markup = renderToStaticMarkup(
-      <TaskModal task={task} patient={patient} canRecord={false} onClose={vi.fn()} onSave={vi.fn()} />,
+      <TaskModal task={task} patient={patient} canRecord={true} canDelayOrSkip={false} canCorrect={false} onClose={vi.fn()} onSave={vi.fn()} />,
     )
 
-    expect(markup).toContain('Family read-only view')
-    expect(markup).not.toContain('Care outcome')
-    expect(markup).not.toContain('Record outcome')
+    expect(markup).toContain('Care outcome')
+    expect(markup).toContain('Record outcome')
     expect(markup).not.toContain('Delay or skip this occurrence')
+  })
+
+  it('restricts clinical corrections for family accounts on completed tasks', () => {
+    const completedTask = {
+      id: 12,
+      taskId: 3,
+      time: '09:30',
+      title: 'Blood pressure check',
+      detail: 'Completed',
+      category: 'health',
+      status: 'done',
+      instructions: 'Allow five minutes of rest.',
+      occurrence: {
+        id: 12,
+        task: 3,
+        task_detail: { priority: 'HIGH', equipment: [], corrections: [] } as never,
+        schedule: 1,
+        scheduled_at: '2026-07-16T09:30:00Z',
+        effective_scheduled_at: '2026-07-16T09:30:00Z',
+        status: 'DONE',
+        outcome: 'COMPLETED',
+        version: 2,
+        completed_at: '2026-07-16T09:35:00Z',
+        completed_by: 1,
+        delayed_until: null,
+        completion: { id: 1, completed_by: 1, completed_by_name: 'Layla', outcome: 'COMPLETED', note: '', photo: '', client_reference: '', created_at: '' },
+        corrections: [],
+        updated_at: '2026-07-16T09:35:00Z',
+      },
+    } as ComponentProps<typeof TaskModal>['task']
+    const markup = renderToStaticMarkup(
+      <TaskModal task={completedTask} patient={patient} canRecord={true} canDelayOrSkip={false} canCorrect={false} onClose={vi.fn()} onSave={vi.fn()} />,
+    )
+
+    expect(markup).toContain('Clinical correction')
+    expect(markup).not.toContain('Corrected status')
+    expect(markup).not.toContain('Add correction')
   })
 })

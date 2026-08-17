@@ -37,6 +37,7 @@ describe('task builder schedule helpers', () => {
     const preview = previewOccurrences(
       schedule({ frequency: 'WEEKLY', days_of_week: [1], starts_on: '2026-07-20', ends_on: '2026-07-27' }),
     )
-    expect(preview.map((item) => item.toISOString().slice(0, 10))).toEqual(['2026-07-20', '2026-07-27'])
+    const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    expect(preview.map(localDate)).toEqual(['2026-07-20', '2026-07-27'])
   })
 })

@@ -157,7 +157,6 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        self.require_care_role()
         occurrence = self.get_object()
         serializer = CompleteOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})
         serializer.is_valid(raise_exception=True)

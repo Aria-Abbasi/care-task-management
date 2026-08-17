@@ -362,10 +362,51 @@ class CareApiTests(APITestCase):
         self.assertEqual(self.occurrence.completed_by, self.caregiver)
         self.assertTrue(CompletionLog.objects.filter(occurrence=self.occurrence).exists())
 
-    def test_family_account_cannot_complete_delay_skip_or_correct_task(self):
+    def test_family_account_can_complete_assigned_task(self):
         family = User.objects.create_user(
-            username="family-task-reader",
-            email="family-task-reader@example.com",
+            username="family-task-completer",
+            email="family-task-completer@example.com",
+            password="safe-test-password",
+            role=User.Role.FAMILY,
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(
+            user=family,
+            patient=self.patient,
+            relationship=CareAssignment.Relationship.FAMILY,
+        )
+        self.client.force_authenticate(family)
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.occurrence.refresh_from_db()
+        self.assertEqual(self.occurrence.status, TaskOccurrence.Status.DONE)
+        self.assertEqual(self.occurrence.completed_by, family)
+        self.assertTrue(CompletionLog.objects.filter(occurrence=self.occurrence, completed_by=family).exists())
+
+    def test_family_account_cannot_complete_unassigned_patient_task(self):
+        unassigned_family = User.objects.create_user(
+            username="family-unassigned",
+            email="family-unassigned@example.com",
+            password="safe-test-password",
+            role=User.Role.FAMILY,
+            organization=self.organization,
+        )
+        self.client.force_authenticate(unassigned_family)
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_family_account_cannot_delay_skip_correct_or_create_tasks(self):
+        family = User.objects.create_user(
+            username="family-restricted-tester",
+            email="family-restricted-tester@example.com",
             password="safe-test-password",
             role=User.Role.FAMILY,
             organization=self.organization,
@@ -377,7 +418,6 @@ class CareApiTests(APITestCase):
         )
         self.client.force_authenticate(family)
         actions = {
-            "complete": {"outcome": CompletionLog.Outcome.COMPLETED, "expected_version": 1},
             "delay": {
                 "delayed_until": (timezone.now() + timedelta(hours=1)).isoformat(),
                 "reason": "Care team follow-up",
@@ -400,9 +440,20 @@ class CareApiTests(APITestCase):
                 )
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-        self.occurrence.refresh_from_db()
-        self.assertEqual(self.occurrence.status, TaskOccurrence.Status.PENDING)
-        self.assertFalse(CompletionLog.objects.filter(occurrence=self.occurrence).exists())
+        # Family cannot create tasks
+        create_response = self.client.post(
+            "/api/v1/tasks/",
+            {
+                "patient": self.patient.id,
+                "title": "Family created task",
+                "category": Task.Category.PERSONAL_CARE,
+                "priority": Task.Priority.NORMAL,
+                "instructions": "Follow up",
+                "schedules": [{"frequency": TaskSchedule.Frequency.DAILY, "time": "10:00"}],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_completion_can_be_replayed_with_same_offline_reference(self):
         self.authenticate()
