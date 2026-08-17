@@ -93,7 +93,9 @@ class PatientViewSet(viewsets.ModelViewSet):
             pending=Count("id", filter=Q(status__in=[TaskOccurrence.Status.PENDING, TaskOccurrence.Status.DELAYED])),
         )
         latest_vitals = []
-        for vital_type, _ in VitalRecord.Type.choices:
+        recorded_types = list(patient.vital_records.order_by().values_list("type", flat=True).distinct())
+        all_types = list(dict.fromkeys(list(VitalRecord.Type.values) + recorded_types))
+        for vital_type in all_types:
             record = patient.vital_records.filter(type=vital_type).first()
             if record:
                 latest_vitals.append(record)

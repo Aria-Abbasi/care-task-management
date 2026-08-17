@@ -33,7 +33,7 @@ from apps.communications.views import (
     MessageViewSet,
     ShiftAssignmentViewSet,
 )
-from apps.health.views import VitalRecordViewSet
+from apps.health.views import CustomVitalTypeViewSet, VitalRecordViewSet
 from apps.interoperability.views import FhirMetadataView, FhirResourceView
 from apps.medications.views import (
     DoseLogViewSet,
@@ -71,6 +71,7 @@ router.register("medication-interactions", MedicationInteractionViewSet, basenam
 router.register("refill-requests", RefillRequestViewSet, basename="refill-request")
 router.register("stock-adjustments", StockAdjustmentViewSet, basename="stock-adjustment")
 router.register("vitals", VitalRecordViewSet, basename="vital")
+router.register("vital-types", CustomVitalTypeViewSet, basename="vital-type")
 router.register("shift-reports", ShiftReportViewSet, basename="shift-report")
 router.register("audit-events", AuditEventViewSet, basename="audit-event")
 router.register("notifications", CareNotificationViewSet, basename="notification")

@@ -1,6 +1,6 @@
 import { listMutations, queueMutation, removeMutation, updateMutation, type QueuedMutation } from './offline'
 import { createContractTransport, type ApiPath } from './generated-api'
-import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, WoundRecord } from './types'
+import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
 
 const API_ROOT = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 const SESSION_KEY = 'haven.session'
@@ -245,6 +245,15 @@ export const transitionShift = async (token: string, id: number, action: 'accept
 export async function createVital(token: string, payload: Record<string, unknown>) {
   return request<VitalRecord>('/vitals/', { method: 'POST', body: JSON.stringify(payload) }, token)
 }
+
+export const getCustomVitalTypes = async (token: string) =>
+  (await request<Paginated<CustomVitalType>>('/vital-types/?active=true&ordering=name', {}, token)).results
+
+export const getVitalOptions = async (token: string) =>
+  request<{ built_in: VitalTypeOption[]; custom: VitalTypeOption[]; all: VitalTypeOption[] }>('/vital-types/options/', {}, token)
+
+export const createCustomVitalType = async (token: string, payload: Partial<CustomVitalType>) =>
+  request<CustomVitalType>('/vital-types/', { method: 'POST', body: JSON.stringify(payload) }, token)
 
 export type MutationResult<T> = { queued: boolean; data?: T; conflict?: boolean }
 

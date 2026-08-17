@@ -1,4 +1,5 @@
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
@@ -7,8 +8,69 @@ from apps.clinical.services import evaluate_vital_threshold
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
 
-from .models import VitalRecord
-from .serializers import VitalRecordSerializer
+from .models import CustomVitalType, VitalRecord
+from .serializers import CustomVitalTypeSerializer, VitalRecordSerializer
+
+
+class CustomVitalTypeViewSet(viewsets.ModelViewSet):
+    serializer_class = CustomVitalTypeSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    filterset_fields = ["active"]
+    search_fields = ["name", "slug", "description"]
+    ordering_fields = ["name", "created_at"]
+
+    def get_queryset(self):
+        queryset = CustomVitalType.objects.filter(active=True).select_related("organization", "created_by")
+        if self.request.user.is_superuser:
+            return queryset
+        if self.request.user.organization_id:
+            return queryset.filter(organization_id=self.request.user.organization_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        if not (request.user.is_superuser or request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+            raise PermissionDenied("Family accounts cannot create custom vital types.")
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+            raise PermissionDenied("Family accounts cannot create custom vital types.")
+        vital_type = serializer.save(
+            organization=self.request.user.organization,
+            created_by=self.request.user,
+        )
+        record_audit(
+            actor=self.request.user,
+            patient=None,
+            action="CUSTOM_VITAL_TYPE_CREATED",
+            instance=vital_type,
+            summary=f"Created custom vital type: {vital_type.name} ({vital_type.unit})",
+            metadata={"slug": vital_type.slug, "unit": vital_type.unit},
+        )
+
+    @action(detail=False, methods=["get"], url_path="options")
+    def options(self, request):
+        built_in = [
+            {"type": "BLOOD_PRESSURE", "name": "Blood pressure", "unit": "mmHg", "is_custom": False, "requires_secondary": True},
+            {"type": "HEART_RATE", "name": "Heart rate", "unit": "bpm", "is_custom": False, "requires_secondary": False},
+            {"type": "OXYGEN", "name": "Oxygen saturation", "unit": "%", "is_custom": False, "requires_secondary": False},
+            {"type": "TEMPERATURE", "name": "Temperature", "unit": "°C", "is_custom": False, "requires_secondary": False},
+            {"type": "WEIGHT", "name": "Weight", "unit": "kg", "is_custom": False, "requires_secondary": False},
+            {"type": "GLUCOSE", "name": "Blood glucose", "unit": "mg/dL", "is_custom": False, "requires_secondary": False},
+        ]
+        custom = [
+            {
+                "type": item.slug,
+                "name": item.name,
+                "unit": item.unit,
+                "description": item.description,
+                "is_custom": True,
+                "requires_secondary": False,
+                "id": item.id,
+            }
+            for item in self.get_queryset()
+        ]
+        return Response({"built_in": built_in, "custom": custom, "all": built_in + custom})
 
 
 class VitalRecordViewSet(viewsets.ModelViewSet):

@@ -2,11 +2,11 @@ import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-import { DoseModal, PrnModal, TaskModal } from './App'
+import { DoseModal, PrnModal, TaskModal, VitalModal } from './App'
 import { TaskBuilder } from './features/TaskBuilder'
 import HealthView from './features/HealthView'
 import ReportsView from './features/ReportsView'
-import type { DoseLog, Medication, Patient, Session } from './lib/types'
+import type { DoseLog, Medication, Patient, Session, VitalRecord } from './lib/types'
 
 const patient: Patient = {
   id: 7,
@@ -201,5 +201,53 @@ describe('safe caregiver dialogs', () => {
     expect(markup).toContain('Clinical correction')
     expect(markup).not.toContain('Corrected status')
     expect(markup).not.toContain('Add correction')
+  })
+
+  it('renders vital recording modal with custom vital affordance for care roles', () => {
+    const markup = renderToStaticMarkup(
+      <VitalModal token="test-token" canCreateType={true} onClose={vi.fn()} onSave={vi.fn()} locale="en" />,
+    )
+
+    expect(markup).toContain('Record a vital')
+    expect(markup).toContain('Standard Vitals')
+    expect(markup).toContain('Blood pressure')
+    expect(markup).toContain('+ Add custom vital type')
+  })
+
+  it('hides custom vital type creation in VitalModal when user is not authorized', () => {
+    const markup = renderToStaticMarkup(
+      <VitalModal token="test-token" canCreateType={false} onClose={vi.fn()} onSave={vi.fn()} locale="en" />,
+    )
+
+    expect(markup).toContain('Record a vital')
+    expect(markup).not.toContain('+ Add custom vital type')
+  })
+
+  it('renders HealthView with custom vitals support', () => {
+    const session = { token: 'test', user: { id: 1, role: 'CAREGIVER' } } as Session
+    const customRecord: VitalRecord = {
+      id: 99,
+      patient: 7,
+      patient_name: 'Maryam Abbasi',
+      type: 'PEAK_FLOW',
+      value: '450',
+      secondary_value: null,
+      unit: 'L/min',
+      recorded_at: '2026-07-16T10:00:00Z',
+      recorded_by: 1,
+      recorded_by_name: 'Layla',
+      note: 'Normal effort',
+      source_system: 'Haven',
+      external_id: '',
+      provenance: {},
+    }
+    const markup = renderToStaticMarkup(
+      <HealthView session={session} patient={patient} latest={[customRecord]} onRecord={vi.fn()} canRecord={true} />,
+    )
+
+    expect(markup).toContain('Health readings')
+    expect(markup).toContain('PEAK FLOW')
+    expect(markup).toContain('450')
+    expect(markup).toContain('L/min')
   })
 })

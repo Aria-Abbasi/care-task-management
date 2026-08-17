@@ -39,6 +39,8 @@ import {
   saveSession,
   saveMedicationOrder,
   skipOccurrence,
+  getVitalOptions,
+  createCustomVitalType,
 } from './lib/api'
 import {
   cacheDashboard, cachePatients, clearOfflineData, listMutations, pendingMutationCount, queuedMutationOwners,
@@ -52,7 +54,7 @@ import { copy } from './lib/i18n'
 import type { TaskCreationDraft } from './lib/task-builder'
 import type {
   ApiUser, AuditEvent, CalendarData, CareNotification, DashboardResponse, DoseLog, Medication, Patient,
-  Session, ShiftAssignment, TaskOccurrence, VitalRecord,
+  Session, ShiftAssignment, TaskOccurrence, VitalRecord, VitalTypeOption,
 } from './lib/types'
 
 type View = 'today' | 'shift' | 'schedule' | 'tasks' | 'medications' | 'clinical' | 'health' | 'timeline' | 'reports' | 'messages' | 'safety' | 'admin' | 'settings'
@@ -780,7 +782,7 @@ function App() {
       {selectedDose && <DoseModal dose={selectedDose} patient={patient} onClose={() => setSelectedDose(null)} onSave={recordDoseOutcome} locale={locale} />}
       {selectedPrn && <PrnModal medication={selectedPrn} patient={patient} onClose={() => setSelectedPrn(null)} onSave={recordPrnDose} locale={locale} />}
       {showAddTask && session && <TaskBuilder patient={patient} token={session.token} existingTitles={tasks.map((task) => task.title)} onClose={() => setShowAddTask(false)} onCreate={addTask} locale={locale} />}
-      {showVital && <VitalModal onClose={() => setShowVital(false)} onSave={recordVital} locale={locale} />}
+      {showVital && <VitalModal token={session?.token} canCreateType={user.role !== 'FAMILY'} onClose={() => setShowVital(false)} onSave={recordVital} locale={locale} />}
       <div className="sr-only" aria-live="polite">{syncing ? shellCopy.syncAnnouncement : pendingSync ? shellCopy.pendingAnnouncement(pendingSync) : shellCopy.syncedAnnouncement}</div>
       {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={19} />{toast}</div>}
     </div>
@@ -1186,27 +1188,258 @@ function SafetyLog({ events, mutations, onResolve, onRefresh, locale }: { events
   return <><PageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} action={<div className="med-actions"><button className="secondary-button" onClick={() => window.print()}>{t.print}</button><button className="secondary-button" onClick={onRefresh}><RefreshCw /> {t.refresh}</button></div>} /><div className="audit-filters" role="group" aria-label={fa ? 'فیلتر گزارش ایمنی' : 'Safety log filters'}>{filters.map(([value, label]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{label}</button>)}</div><div className="safety-grid"><section className="main-card sync-review"><div className="subsection-heading"><div><h3>{t.offline}</h3><p>{filteredMutations.length ? (fa ? `${filteredMutations.length} تغییر نیازمند بررسی است` : `${filteredMutations.length} change${filteredMutations.length === 1 ? '' : 's'} need review`) : t.allSynced}</p></div></div>{filteredMutations.map((item) => <article className={`sync-item ${item.status || 'pending'}`} key={item.id}><span>{item.status === 'conflict' ? <TriangleAlert /> : item.status === 'failed' ? <AlertCircle /> : <Cloud />}</span><div><strong>{item.path.replaceAll('/', ' ').trim()}</strong><small>{new Date(item.createdAt).toLocaleString(fa ? 'fa-IR-u-ca-persian' : undefined)} · {item.status || 'pending'} · {item.attempts} {fa ? 'تلاش' : 'retries'}</small>{item.lastError && <p>{item.lastError}</p>}{item.status === 'conflict' && <details className="conflict-compare"><summary>{fa ? 'مقایسه رکورد در صف و سرور' : 'Compare queued and server records'}</summary><div><span><b>{fa ? 'تغییر در صف' : 'Queued change'}</b><code>{JSON.stringify(item.body, null, 2)}</code></span><span><b>{fa ? 'رکورد فعلی سرور' : 'Current server record'}</b><code>{JSON.stringify(item.serverState, null, 2)}</code></span></div></details>}</div><div><button className="secondary-button" onClick={() => onResolve(item, 'retry')}><RotateCcw /> {fa ? 'تلاش با نسخه فعلی' : 'Retry with current version'}</button><button className="text-button danger-text" onClick={() => onResolve(item, 'discard')}>{fa ? 'حذف' : 'Discard'}</button></div></article>)}{!filteredMutations.length && <div className="empty-care compact"><Cloud /><strong>{t.everything}</strong></div>}</section><section className="main-card audit-log"><div className="subsection-heading"><div><h3>{t.audit}</h3><p>{t.auditDetail}</p></div></div>{filteredEvents.map((event) => <article className="audit-row" key={event.id}><span><History /></span><div><strong>{event.summary}</strong><small>{event.actor_name || (fa ? 'سامانه' : 'System')} · {new Date(event.created_at).toLocaleString(fa ? 'fa-IR-u-ca-persian' : undefined)}</small></div><b>{event.action.replaceAll('_', ' ').toLowerCase()}</b></article>)}{!filteredEvents.length && <div className="empty-care compact"><History /><strong>{t.noAudit}</strong></div>}</section></div></>
 }
 
-function VitalModal({ onClose, onSave, locale }: { onClose: () => void; onSave: (payload: Record<string, unknown>) => Promise<void>; locale: string }) {
+const defaultVitalUnits: Record<string, string> = {
+  BLOOD_PRESSURE: 'mmHg',
+  HEART_RATE: 'bpm',
+  OXYGEN: '%',
+  TEMPERATURE: '°C',
+  WEIGHT: 'kg',
+  GLUCOSE: 'mg/dL',
+}
+
+const defaultVitalLabels: Record<string, { en: string; fa: string }> = {
+  BLOOD_PRESSURE: { en: 'Blood pressure', fa: 'فشار خون' },
+  HEART_RATE: { en: 'Heart rate', fa: 'ضربان قلب' },
+  OXYGEN: { en: 'Oxygen saturation', fa: 'اشباع اکسیژن' },
+  TEMPERATURE: { en: 'Temperature', fa: 'دما' },
+  WEIGHT: { en: 'Weight', fa: 'وزن' },
+  GLUCOSE: { en: 'Blood glucose', fa: 'قند خون' },
+}
+
+export function VitalModal({ token, canCreateType = true, onClose, onSave, locale }: { token?: string; canCreateType?: boolean; onClose: () => void; onSave: (payload: Record<string, unknown>) => Promise<void>; locale: string }) {
   const fa = locale === 'fa'
-  const [type, setType] = useState<VitalRecord['type']>('BLOOD_PRESSURE')
+  const langKey = fa ? 'fa' : 'en'
+
+  const [typeOptions, setTypeOptions] = useState<VitalTypeOption[]>([
+    { type: 'BLOOD_PRESSURE', name: defaultVitalLabels.BLOOD_PRESSURE[langKey], unit: 'mmHg', is_custom: false, requires_secondary: true },
+    { type: 'HEART_RATE', name: defaultVitalLabels.HEART_RATE[langKey], unit: 'bpm', is_custom: false, requires_secondary: false },
+    { type: 'OXYGEN', name: defaultVitalLabels.OXYGEN[langKey], unit: '%', is_custom: false, requires_secondary: false },
+    { type: 'TEMPERATURE', name: defaultVitalLabels.TEMPERATURE[langKey], unit: '°C', is_custom: false, requires_secondary: false },
+    { type: 'WEIGHT', name: defaultVitalLabels.WEIGHT[langKey], unit: 'kg', is_custom: false, requires_secondary: false },
+    { type: 'GLUCOSE', name: defaultVitalLabels.GLUCOSE[langKey], unit: 'mg/dL', is_custom: false, requires_secondary: false },
+  ])
+
+  const [type, setType] = useState<string>('BLOOD_PRESSURE')
   const [value, setValue] = useState('120')
   const [secondary, setSecondary] = useState('80')
+  const [unit, setUnit] = useState('mmHg')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const units: Record<VitalRecord['type'], string> = { BLOOD_PRESSURE: 'mmHg', HEART_RATE: 'bpm', OXYGEN: '%', TEMPERATURE: '°C', WEIGHT: 'kg', GLUCOSE: 'mg/dL' }
+
+  const [isCreatingCustom, setIsCreatingCustom] = useState(false)
+  const [customName, setCustomName] = useState('')
+  const [customUnit, setCustomUnit] = useState('')
+  const [customDesc, setCustomDesc] = useState('')
+  const [creatingType, setCreatingType] = useState(false)
+  const [createError, setCreateError] = useState('')
+
+  useEffect(() => {
+    if (!token) return
+    let active = true
+    getVitalOptions(token)
+      .then((res) => {
+        if (!active) return
+        const mapped = res.all.map((opt) => ({
+          ...opt,
+          name: opt.is_custom ? opt.name : (defaultVitalLabels[opt.type]?.[langKey] || opt.name),
+        }))
+        setTypeOptions(mapped)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [token, langKey])
+
+  const currentOption = typeOptions.find((opt) => opt.type === type) || {
+    type,
+    name: defaultVitalLabels[type]?.[langKey] || type,
+    unit: defaultVitalUnits[type] || unit,
+    is_custom: false,
+    requires_secondary: type === 'BLOOD_PRESSURE',
+  }
+
+  const handleTypeChange = (nextType: string) => {
+    setType(nextType)
+    const opt = typeOptions.find((o) => o.type === nextType)
+    if (opt) {
+      setUnit(opt.unit)
+    }
+  }
+
+  const handleCreateCustomType = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!token) return
+    if (!customName.trim()) {
+      setCreateError(fa ? 'نام نوع اندازه‌گیری الزامی است.' : 'Vital type name is required.')
+      return
+    }
+    if (!customUnit.trim()) {
+      setCreateError(fa ? 'واحد اندازه‌گیری الزامی است.' : 'Unit is required.')
+      return
+    }
+    setCreatingType(true)
+    setCreateError('')
+    try {
+      const created = await createCustomVitalType(token, {
+        name: customName.trim(),
+        unit: customUnit.trim(),
+        description: customDesc.trim(),
+      })
+      const newOption: VitalTypeOption = {
+        type: created.slug,
+        name: created.name,
+        unit: created.unit,
+        description: created.description,
+        is_custom: true,
+        requires_secondary: false,
+        id: created.id,
+      }
+      setTypeOptions((prev) => [...prev, newOption])
+      setType(created.slug)
+      setUnit(created.unit)
+      setValue('')
+      setIsCreatingCustom(false)
+      setCustomName('')
+      setCustomUnit('')
+      setCustomDesc('')
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : fa ? 'نوع جدید ثبت نشد.' : 'Could not create vital type.')
+    } finally {
+      setCreatingType(false)
+    }
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
     setError('')
     try {
-      await onSave({ type, value, secondary_value: type === 'BLOOD_PRESSURE' ? secondary : null, unit: units[type] })
+      await onSave({
+        type,
+        value,
+        secondary_value: currentOption.requires_secondary ? secondary : null,
+        unit: currentOption.unit || unit,
+      })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : fa ? 'اندازه‌گیری ذخیره نشد.' : 'Reading could not be saved.')
     } finally {
       setSaving(false)
     }
   }
-  return <Modal onClose={onClose} locale={locale} label={fa ? 'ثبت علائم حیاتی' : 'Record a vital'}><span className="eyebrow">{fa ? 'ثبت جدید سلامت' : 'NEW HEALTH READING'}</span><h2>{fa ? 'ثبت علائم حیاتی' : 'Record a vital'}</h2><p className="modal-intro">{fa ? 'این اندازه‌گیری با زمان و حساب کاربری شما ثبت می‌شود.' : 'The reading is timestamped and attributed to your account.'}</p><form className="task-form" onSubmit={submit}><label>{fa ? 'نوع اندازه‌گیری' : 'Vital type'}<select value={type} onChange={(event) => setType(event.target.value as VitalRecord['type'])}><option value="BLOOD_PRESSURE">{fa ? 'فشار خون' : 'Blood pressure'}</option><option value="HEART_RATE">{fa ? 'ضربان قلب' : 'Heart rate'}</option><option value="OXYGEN">{fa ? 'اشباع اکسیژن' : 'Oxygen saturation'}</option><option value="TEMPERATURE">{fa ? 'دما' : 'Temperature'}</option><option value="WEIGHT">{fa ? 'وزن' : 'Weight'}</option><option value="GLUCOSE">{fa ? 'قند خون' : 'Blood glucose'}</option></select></label><div className="form-row"><label>{type === 'BLOOD_PRESSURE' ? (fa ? 'سیستولیک' : 'Systolic') : (fa ? 'مقدار' : 'Value')}<input type="number" step="0.1" min="0" required value={value} onChange={(event) => setValue(event.target.value)} /></label>{type === 'BLOOD_PRESSURE' && <label>{fa ? 'دیاستولیک' : 'Diastolic'}<input type="number" step="1" min="0" required value={secondary} onChange={(event) => setSecondary(event.target.value)} /></label>}</div><p className="form-unit">{fa ? 'واحد' : 'Unit'}: {units[type]}</p>{error && <div className="login-error"><AlertCircle />{error}</div>}<button className="primary-button" disabled={saving}>{saving ? (fa ? 'در حال ذخیره…' : 'Saving…') : (fa ? 'ذخیره اندازه‌گیری' : 'Save reading')}</button></form></Modal>
+
+  return (
+    <Modal onClose={onClose} locale={locale} label={fa ? 'ثبت علائم حیاتی' : 'Record a vital'}>
+      <span className="eyebrow">{fa ? 'ثبت جدید سلامت' : 'NEW HEALTH READING'}</span>
+      <h2>{fa ? 'ثبت علائم حیاتی' : 'Record a vital'}</h2>
+      <p className="modal-intro">{fa ? 'این اندازه‌گیری با زمان و حساب کاربری شما ثبت می‌شود.' : 'The reading is timestamped and attributed to your account.'}</p>
+
+      {isCreatingCustom ? (
+        <form className="task-form custom-vital-form" onSubmit={handleCreateCustomType}>
+          <div className="section-title">
+            <h3>{fa ? 'تعریف نوع اندازه‌گیری جدید' : 'Create new vital type'}</h3>
+          </div>
+          <label>
+            {fa ? 'نام نوع اندازه‌گیری' : 'Vital type name'}
+            <input
+              required
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder={fa ? 'مانند: جریان بیشینه بازدم (Peak Flow)' : 'e.g., Peak Expiratory Flow'}
+            />
+          </label>
+          <label>
+            {fa ? 'واحد اندازه‌گیری' : 'Measurement unit'}
+            <input
+              required
+              value={customUnit}
+              onChange={(e) => setCustomUnit(e.target.value)}
+              placeholder={fa ? 'مانند: L/min یا mmol/L' : 'e.g., L/min, breaths/min, cm'}
+            />
+          </label>
+          <label>
+            {fa ? 'توضیحات (اختیاری)' : 'Description (optional)'}
+            <input
+              value={customDesc}
+              onChange={(e) => setCustomDesc(e.target.value)}
+              placeholder={fa ? 'راهنمای ثبت یا تجهیزات مورد نیاز' : 'Instructions or equipment details'}
+            />
+          </label>
+          {createError && <div className="login-error"><AlertCircle />{createError}</div>}
+          <div className="form-row">
+            <button type="button" className="secondary-button" onClick={() => setIsCreatingCustom(false)}>
+              {fa ? 'انصراف' : 'Cancel'}
+            </button>
+            <button type="submit" className="primary-button" disabled={creatingType}>
+              {creatingType ? (fa ? 'در حال ثبت…' : 'Saving…') : (fa ? 'ذخیره نوع جدید' : 'Save vital type')}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <form className="task-form" onSubmit={submit}>
+          <label>
+            {fa ? 'نوع اندازه‌گیری' : 'Vital type'}
+            <select value={type} onChange={(event) => handleTypeChange(event.target.value)}>
+              <optgroup label={fa ? 'علائم استاندارد' : 'Standard Vitals'}>
+                {typeOptions.filter((o) => !o.is_custom).map((opt) => (
+                  <option key={opt.type} value={opt.type}>{opt.name}</option>
+                ))}
+              </optgroup>
+              {typeOptions.some((o) => o.is_custom) && (
+                <optgroup label={fa ? 'علائم اختصاصی' : 'Custom Vitals'}>
+                  {typeOptions.filter((o) => o.is_custom).map((opt) => (
+                    <option key={opt.type} value={opt.type}>{opt.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </label>
+
+          {canCreateType && token && (
+            <button
+              type="button"
+              className="text-button inline-action-btn"
+              onClick={() => setIsCreatingCustom(true)}
+            >
+              <Plus size={16} /> {fa ? '+ تعریف نوع اندازه‌گیری جدید' : '+ Add custom vital type'}
+            </button>
+          )}
+
+          <div className="form-row">
+            <label>
+              {currentOption.requires_secondary ? (fa ? 'سیستولیک' : 'Systolic') : (fa ? 'مقدار' : 'Value')}
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                required
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              />
+            </label>
+            {currentOption.requires_secondary && (
+              <label>
+                {fa ? 'دیاستولیک' : 'Diastolic'}
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  required
+                  value={secondary}
+                  onChange={(event) => setSecondary(event.target.value)}
+                />
+              </label>
+            )}
+          </div>
+          <p className="form-unit">{fa ? 'واحد' : 'Unit'}: {currentOption.unit || unit}</p>
+          {error && <div className="login-error"><AlertCircle />{error}</div>}
+          <button className="primary-button" disabled={saving}>
+            {saving ? (fa ? 'در حال ذخیره…' : 'Saving…') : (fa ? 'ذخیره اندازه‌گیری' : 'Save reading')}
+          </button>
+        </form>
+      )}
+    </Modal>
+  )
 }
 
 type ScheduleProps = { session: Session; patient: Patient; tasks: CareTask[]; locale: string; selectedDate: string; onDate: (date: string) => Promise<void>; onTask: (task: CareTask) => void; onAdd: () => void }

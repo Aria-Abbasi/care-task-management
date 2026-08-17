@@ -204,11 +204,38 @@ export type DoseCorrection = {
   created_at: string
 }
 
+export type BuiltInVitalType = 'BLOOD_PRESSURE' | 'HEART_RATE' | 'OXYGEN' | 'TEMPERATURE' | 'WEIGHT' | 'GLUCOSE'
+export type VitalType = BuiltInVitalType | (string & {})
+
+export type CustomVitalType = {
+  id: number
+  name: string
+  slug: string
+  unit: string
+  description: string
+  organization: number | null
+  created_by: number | null
+  created_by_name: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type VitalTypeOption = {
+  type: string
+  name: string
+  unit: string
+  description?: string
+  is_custom: boolean
+  requires_secondary: boolean
+  id?: number
+}
+
 export type VitalRecord = {
   id: number
   patient: number
   patient_name: string
-  type: 'BLOOD_PRESSURE' | 'HEART_RATE' | 'OXYGEN' | 'TEMPERATURE' | 'WEIGHT' | 'GLUCOSE'
+  type: VitalType
   value: string
   secondary_value: string | null
   unit: string
