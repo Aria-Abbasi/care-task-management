@@ -16,9 +16,28 @@ class Organization(TimeStampedModel):
     country_code = models.CharField(max_length=2, blank=True)
     timezone = models.CharField(max_length=64, default="UTC")
     active = models.BooleanField(default=True)
+    allow_family_task_completion = models.BooleanField(
+        default=False,
+        help_text="When true, assigned family members can mark routine tasks complete and log food intake."
+    )
 
     def __str__(self):
         return self.name
+
+
+class OrganizationMembership(TimeStampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organization_memberships")
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="user_memberships")
+    role = models.CharField(max_length=16, default="CAREGIVER")
+    is_default = models.BooleanField(default=False)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ("user", "organization")
+        ordering = ["-is_default", "organization__name"]
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.organization.name} ({self.role})"
 
 
 class User(AbstractUser):
@@ -32,6 +51,7 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, unique=True, null=True, blank=True)
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.CAREGIVER)
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT, null=True, blank=True, related_name="users")
+    organizations = models.ManyToManyField(Organization, through=OrganizationMembership, related_name="members", blank=True)
     mfa_secret = models.CharField(max_length=64, blank=True)
     mfa_enabled = models.BooleanField(default=False)
     mfa_confirmed_at = models.DateTimeField(null=True, blank=True)

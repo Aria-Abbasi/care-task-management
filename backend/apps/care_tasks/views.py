@@ -10,9 +10,10 @@ from apps.accounts.models import User
 from apps.common.exceptions import VersionConflict
 from apps.common.timezones import patient_timezone
 from apps.patients.access import patients_for_user
+from apps.patients.models import Patient
 from apps.safety.services import record_audit
 
-from .models import CareTaskTemplate, Task, TaskOccurrence
+from .models import CareTaskTemplate, CompletionLog, Task, TaskOccurrence
 from .serializers import (
     CareTaskTemplateSerializer,
     CompleteOccurrenceSerializer,
@@ -26,10 +27,10 @@ from .services import generate_occurrences_for_date
 
 class PatientAccessMixin:
     def allowed_patient_ids(self):
-        return patients_for_user(self.request.user).values_list("id", flat=True)
+        return patients_for_user(self.request.user, self.request).values_list("id", flat=True)
 
     def validate_patient_access(self, patient):
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
 
     def require_care_role(self):
@@ -39,7 +40,7 @@ class PatientAccessMixin:
 
 class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
     serializer_class = TaskSerializer
-    filterset_fields = ["patient", "category", "priority", "assigned_to", "active"]
+    filterset_fields = ["patient", "category", "priority", "schedule_type", "assigned_to", "active"]
     search_fields = ["title", "instructions"]
     ordering_fields = ["title", "priority", "created_at"]
 
@@ -62,7 +63,8 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         self.require_care_role()
         self.validate_patient_access(serializer.validated_data["patient"])
         task = serializer.save()
-        generate_occurrences_for_date(timezone.localdate(timezone=patient_timezone(task.patient)), patient=task.patient)
+        if task.schedule_type == Task.ScheduleType.SCHEDULED:
+            generate_occurrences_for_date(timezone.localdate(timezone=patient_timezone(task.patient)), patient=task.patient)
         record_audit(
             actor=self.request.user,
             patient=task.patient,
@@ -95,6 +97,49 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
             instance=instance,
             summary=f"Deactivated care task: {instance.title}",
         )
+
+    @action(detail=True, methods=["post"], url_path="log-action")
+    def log_action(self, request, pk=None):
+        task = self.get_object()
+        self.validate_patient_access(task.patient)
+        if request.user.role == User.Role.FAMILY:
+            if not getattr(task.patient.organization, "allow_family_task_completion", False):
+                raise PermissionDenied("Family task completion is disabled for this organization.")
+
+        note = request.data.get("note", "")
+        photo = request.FILES.get("photo")
+        client_reference = request.data.get("client_reference")
+        outcome = request.data.get("outcome", CompletionLog.Outcome.COMPLETED)
+        now = timezone.now()
+
+        with transaction.atomic():
+            occurrence = TaskOccurrence.objects.create(
+                task=task,
+                scheduled_at=now,
+                status=TaskOccurrence.Status.DONE,
+                completed_at=now,
+                completed_by=request.user,
+                outcome=outcome,
+                version=1,
+            )
+            CompletionLog.objects.create(
+                occurrence=occurrence,
+                completed_by=request.user,
+                outcome=outcome,
+                note=note,
+                photo=photo,
+                client_reference=client_reference,
+            )
+            record_audit(
+                actor=request.user,
+                patient=task.patient,
+                action="TASK_ON_DEMAND_LOGGED",
+                instance=occurrence,
+                summary=f"Logged on-demand task: {task.title}",
+                metadata={"note": note, "outcome": outcome},
+                client_reference=client_reference,
+            )
+        return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class CareTaskTemplateViewSet(viewsets.ModelViewSet):
@@ -155,9 +200,75 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         self.validate_patient_access(task.patient)
         serializer.save()
 
+    @action(detail=False, methods=["post"], url_path="ad-hoc")
+    def create_ad_hoc(self, request):
+        self.require_care_role()
+        patient_id = request.data.get("patient")
+        if not patient_id:
+            return Response({"patient": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        patient = Patient.objects.filter(pk=patient_id).first()
+        if not patient:
+            return Response({"patient": ["Patient not found."]}, status=status.HTTP_404_NOT_FOUND)
+        self.validate_patient_access(patient)
+
+        title = request.data.get("title")
+        if not title:
+            return Response({"title": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        category = request.data.get("category", Task.Category.PERSONAL_CARE)
+        priority = request.data.get("priority", Task.Priority.NORMAL)
+        instructions = request.data.get("instructions", "")
+        note = request.data.get("note", "")
+        photo = request.FILES.get("photo")
+        client_reference = request.data.get("client_reference")
+        outcome = request.data.get("outcome", CompletionLog.Outcome.COMPLETED)
+
+        now = timezone.now()
+        with transaction.atomic():
+            task = Task.objects.create(
+                patient=patient,
+                title=title,
+                category=category,
+                priority=priority,
+                schedule_type=Task.ScheduleType.ON_DEMAND,
+                instructions=instructions,
+                assigned_to=request.user if request.user.role == User.Role.CAREGIVER else None,
+                active=True,
+            )
+            occurrence = TaskOccurrence.objects.create(
+                task=task,
+                scheduled_at=now,
+                status=TaskOccurrence.Status.DONE,
+                completed_at=now,
+                completed_by=request.user,
+                outcome=outcome,
+                version=1,
+            )
+            CompletionLog.objects.create(
+                occurrence=occurrence,
+                completed_by=request.user,
+                outcome=outcome,
+                note=note,
+                photo=photo,
+                client_reference=client_reference,
+            )
+            record_audit(
+                actor=request.user,
+                patient=patient,
+                action="TASK_AD_HOC_CREATED",
+                instance=occurrence,
+                summary=f"Created and logged ad-hoc task: {title}",
+                metadata={"note": note, "category": category},
+                client_reference=client_reference,
+            )
+        return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         occurrence = self.get_object()
+        if request.user.role == User.Role.FAMILY:
+            if not getattr(occurrence.task.patient.organization, "allow_family_task_completion", False):
+                raise PermissionDenied("Family task completion is disabled for this organization.")
         serializer = CompleteOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})
         serializer.is_valid(raise_exception=True)
         serializer.save()

@@ -37,11 +37,11 @@ class PatientScopedViewSet(viewsets.ModelViewSet):
     patient_path = "patient"
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return self.queryset.filter(**{f"{self.patient_path}_id__in": patient_ids})
 
     def _validate_patient(self, patient):
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
 
     def perform_create(self, serializer):
@@ -213,6 +213,9 @@ class FoodIntakeLogViewSet(PatientScopedViewSet):
     def perform_create(self, serializer):
         patient = serializer.validated_data["patient"]
         self._validate_patient(patient)
+        if self.request.user.role == User.Role.FAMILY:
+            if not getattr(patient.organization, "allow_family_task_completion", False):
+                raise PermissionDenied("Family food intake logging is disabled for this organization.")
         log = serializer.save(recorded_by=self.request.user)
         record_audit(
             actor=self.request.user,

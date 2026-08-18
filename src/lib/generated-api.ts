@@ -28,13 +28,17 @@ export function createContractClient(baseUrl: string, token?: string) {
 }
 
 export function createContractTransport(baseUrl: string) {
-  return (path: ApiPath, init: RequestInit = {}, token?: string) => fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Token ${token}` } : {}),
-      ...init.headers,
-    },
-  })
+  return (path: ApiPath, init: RequestInit = {}, token?: string) => {
+    const activeOrgId = typeof localStorage !== 'undefined' ? localStorage.getItem('active_org_id') : null
+    return fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Token ${token}` } : {}),
+        ...(activeOrgId ? { 'X-Organization-Id': activeOrgId } : {}),
+        ...init.headers,
+      },
+    })
+  }
 }

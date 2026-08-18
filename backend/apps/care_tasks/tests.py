@@ -375,6 +375,8 @@ class CareApiTests(APITestCase):
             patient=self.patient,
             relationship=CareAssignment.Relationship.FAMILY,
         )
+        self.organization.allow_family_task_completion = True
+        self.organization.save()
         self.client.force_authenticate(family)
         response = self.client.post(
             f"/api/v1/occurrences/{self.occurrence.id}/complete/",
@@ -757,3 +759,124 @@ class CareApiTests(APITestCase):
         self.assertTrue(DoseLog.objects.filter(medication=valid).exists())
         self.assertFalse(DoseLog.objects.filter(medication=pending).exists())
         self.assertFalse(DoseLog.objects.filter(medication=ended).exists())
+
+    def test_on_demand_task_log_action_creates_completed_occurrence_and_audit(self):
+        on_demand_task = Task.objects.create(
+            patient=self.patient,
+            title="Hydration Cup",
+            category=Task.Category.PERSONAL_CARE,
+            schedule_type=Task.ScheduleType.ON_DEMAND,
+            assigned_to=self.caregiver,
+        )
+        self.authenticate()
+        response = self.client.post(
+            f"/api/v1/tasks/{on_demand_task.id}/log-action/",
+            {"note": "Patient drank 250ml water", "outcome": "COMPLETED"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], TaskOccurrence.Status.DONE)
+        self.assertEqual(response.data["task_detail"]["title"], "Hydration Cup")
+        self.assertTrue(
+            AuditEvent.objects.filter(action="TASK_ON_DEMAND_LOGGED", patient=self.patient).exists()
+        )
+
+    def test_ad_hoc_task_creation_by_caregiver(self):
+        self.authenticate()
+        response = self.client.post(
+            "/api/v1/occurrences/ad-hoc/",
+            {
+                "patient": self.patient.id,
+                "title": "Emergency ice pack applied",
+                "category": "HEALTH",
+                "priority": "HIGH",
+                "note": "Applied to left wrist for 15 mins",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], TaskOccurrence.Status.DONE)
+        self.assertEqual(response.data["task_detail"]["title"], "Emergency ice pack applied")
+        created_task = Task.objects.get(title="Emergency ice pack applied")
+        self.assertEqual(created_task.schedule_type, Task.ScheduleType.ON_DEMAND)
+        self.assertTrue(
+            AuditEvent.objects.filter(action="TASK_AD_HOC_CREATED", patient=self.patient).exists()
+        )
+
+    def test_family_task_completion_toggle_enforcement(self):
+        family_user = User.objects.create_user(
+            username="layla_family",
+            email="layla@example.com",
+            password="family-password-123",
+            role=User.Role.FAMILY,
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(
+            user=family_user,
+            patient=self.patient,
+            relationship=CareAssignment.Relationship.FAMILY,
+        )
+
+        self.organization.allow_family_task_completion = False
+        self.organization.save()
+
+        self.client.force_authenticate(family_user)
+        # Attempting to complete occurrence when toggle is False -> 403 Forbidden
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": "COMPLETED", "note": "Assisted by family", "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Enable toggle on organization
+        self.organization.allow_family_task_completion = True
+        self.organization.save()
+
+        # Now family member can complete routine task
+        response = self.client.post(
+            f"/api/v1/occurrences/{self.occurrence.id}/complete/",
+            {"outcome": "COMPLETED", "note": "Assisted by family", "expected_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], TaskOccurrence.Status.DONE)
+
+    def test_multi_organization_switching_and_header_scoping(self):
+        from apps.accounts.models import OrganizationMembership
+
+        other_org = Organization.objects.create(name="Haven South", slug="haven-south")
+        other_patient = Patient.objects.create(
+            first_name="Reza",
+            last_name="Karimi",
+            birth_date=date(1955, 5, 20),
+            gender=Patient.Gender.MALE,
+            organization=other_org,
+        )
+
+        admin_user = User.objects.create_user(
+            username="super_admin",
+            email="admin@example.com",
+            password="admin-password-123",
+            role=User.Role.ADMIN,
+            organization=self.organization,
+        )
+        # Add membership to second organization
+        OrganizationMembership.objects.create(user=admin_user, organization=other_org, role=User.Role.ADMIN)
+
+        self.client.force_authenticate(admin_user)
+
+        # Default header / context: scoped to Haven Test (self.organization)
+        response = self.client.get("/api/v1/patients/")
+        results = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        patient_ids = [p["id"] for p in results]
+        self.assertIn(self.patient.id, patient_ids)
+        self.assertNotIn(other_patient.id, patient_ids)
+
+        # Passing X-Organization-Id header switches scope to other_org
+        response = self.client.get("/api/v1/patients/", HTTP_X_ORGANIZATION_ID=str(other_org.id))
+        scoped_results = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        scoped_patient_ids = [p["id"] for p in scoped_results]
+        self.assertIn(other_patient.id, scoped_patient_ids)
+        self.assertNotIn(self.patient.id, scoped_patient_ids)
+

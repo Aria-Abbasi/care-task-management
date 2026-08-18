@@ -33,7 +33,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     ordering_fields = ["first_name", "last_name", "birth_date", "created_at"]
 
     def get_queryset(self):
-        return patients_for_user(self.request.user).prefetch_related("care_assignments")
+        return patients_for_user(self.request.user, self.request).prefetch_related("care_assignments")
 
     def _require_admin_for_write(self):
         user = self.request.user

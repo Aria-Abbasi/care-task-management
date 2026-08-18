@@ -236,6 +236,77 @@ export async function completeOccurrenceWithPhoto(token: string, occurrence: Tas
   return request<TaskOccurrence>(`/occurrences/${occurrence.id}/complete/`, { method: 'POST', body: form }, token)
 }
 
+export async function logOnDemandTaskAction(
+  token: string,
+  taskId: number,
+  payload: { outcome?: string; note?: string; client_reference?: string; photo?: File } = {},
+) {
+  if (payload.photo) {
+    const form = new FormData()
+    if (payload.outcome) form.append('outcome', payload.outcome)
+    if (payload.note) form.append('note', payload.note)
+    form.append('client_reference', payload.client_reference || crypto.randomUUID())
+    form.append('photo', payload.photo)
+    return request<TaskOccurrence>(`/tasks/${taskId}/log-action/`, { method: 'POST', body: form }, token)
+  }
+  return request<TaskOccurrence>(`/tasks/${taskId}/log-action/`, {
+    method: 'POST',
+    body: JSON.stringify({
+      outcome: payload.outcome || 'COMPLETED',
+      note: payload.note || '',
+      client_reference: payload.client_reference || crypto.randomUUID(),
+    }),
+  }, token)
+}
+
+export async function createAdHocTask(
+  token: string,
+  payload: {
+    patient: number
+    title: string
+    category?: string
+    priority?: string
+    instructions?: string
+    note?: string
+    outcome?: string
+    client_reference?: string
+    photo?: File
+  },
+) {
+  if (payload.photo) {
+    const form = new FormData()
+    Object.entries(payload).forEach(([key, val]) => {
+      if (val !== undefined && val !== null) {
+        if (key === 'photo') {
+          form.append('photo', val as File)
+        } else {
+          form.append(key, String(val))
+        }
+      }
+    })
+    if (!payload.client_reference) form.append('client_reference', crypto.randomUUID())
+    return request<TaskOccurrence>('/occurrences/ad-hoc/', { method: 'POST', body: form }, token)
+  }
+  return request<TaskOccurrence>('/occurrences/ad-hoc/', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...payload,
+      client_reference: payload.client_reference || crypto.randomUUID(),
+    }),
+  }, token)
+}
+
+export const switchOrganization = async (token: string, orgId: number) => {
+  const updatedUser = await request<ApiUser>(`/organizations/${orgId}/switch/`, { method: 'POST' }, token)
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('active_org_id', String(orgId))
+  }
+  return updatedUser
+}
+
+export const updateOrganization = async (token: string, orgId: number, payload: Partial<Organization>) =>
+  request<Organization>(`/organizations/${orgId}/`, { method: 'PATCH', body: JSON.stringify(payload) }, token)
+
 export const getPushSubscriptions = async (token: string) => (await request<Paginated<PushSubscription>>('/push-subscriptions/', {}, token)).results
 export const disablePushSubscription = async (token: string, id: number) => request<void>(`/push-subscriptions/${id}/`, { method: 'DELETE' }, token)
 export const disableMfa = async (token: string, code: string) => request<{ enabled: boolean }>('/mfa/disable/', { method: 'POST', body: JSON.stringify({ code }) }, token)

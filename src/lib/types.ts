@@ -1,3 +1,13 @@
+export type OrganizationSummary = {
+  id: number
+  name: string
+  slug: string
+  country_code?: string
+  timezone?: string
+  allow_family_task_completion?: boolean
+  role?: string
+}
+
 export type ApiUser = {
   id: number
   username: string
@@ -10,6 +20,9 @@ export type ApiUser = {
   is_active: boolean
   organization: number | null
   organization_name: string
+  organizations?: OrganizationSummary[]
+  active_organization_id?: number
+  allow_family_task_completion?: boolean
   mfa_enabled: boolean
 }
 
@@ -20,7 +33,15 @@ export type Session = {
   user: ApiUser
 }
 
-export type Organization = { id: number; name: string; slug: string; country_code: string; timezone: string; active: boolean }
+export type Organization = {
+  id: number
+  name: string
+  slug: string
+  country_code: string
+  timezone: string
+  active: boolean
+  allow_family_task_completion?: boolean
+}
 
 export type Patient = {
   id: number
@@ -69,6 +90,7 @@ export type TaskTemplate = {
   title: string
   category: 'MEDICATION' | 'HEALTH' | 'MEAL' | 'ACTIVITY' | 'PERSONAL_CARE' | 'OTHER'
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+  schedule_type?: 'SCHEDULED' | 'ON_DEMAND'
   instructions: string
   expected_outcome: string
   safety_notes: string

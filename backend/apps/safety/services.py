@@ -5,7 +5,7 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.care_tasks.models import TaskOccurrence
+from apps.care_tasks.models import Task, TaskOccurrence
 from apps.medications.models import DoseLog
 from apps.patients.models import CareAssignment
 
@@ -182,6 +182,7 @@ def scan_overdue_alerts(now=None, grace_minutes=30):
     task_filter = Q(delayed_until__isnull=True, scheduled_at__lt=now) | Q(delayed_until__lt=now)
     occurrences = TaskOccurrence.objects.filter(
         task_filter,
+        task__schedule_type=Task.ScheduleType.SCHEDULED,
         status__in=[
             TaskOccurrence.Status.PENDING,
             TaskOccurrence.Status.MISSED,

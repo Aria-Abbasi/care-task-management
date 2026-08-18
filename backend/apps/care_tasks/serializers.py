@@ -108,6 +108,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "title",
             "category",
             "priority",
+            "schedule_type",
             "instructions",
             "expected_outcome",
             "safety_notes",
@@ -128,9 +129,10 @@ class TaskSerializer(serializers.ModelSerializer):
         patient = attrs.get("patient", getattr(self.instance, "patient", None))
         assigned_to = attrs.get("assigned_to", getattr(self.instance, "assigned_to", None))
         schedules = attrs.get("schedules")
+        schedule_type = attrs.get("schedule_type", getattr(self.instance, "schedule_type", Task.ScheduleType.SCHEDULED))
         if patient and assigned_to and not CareAssignment.objects.filter(patient=patient, user=assigned_to, active=True).exists():
             raise serializers.ValidationError({"assigned_to": "This user is not actively assigned to the patient."})
-        if self.instance is None and not schedules:
+        if self.instance is None and schedule_type == Task.ScheduleType.SCHEDULED and not schedules:
             raise serializers.ValidationError({"schedules": "Add at least one schedule to the task."})
         if schedules:
             seen = set()

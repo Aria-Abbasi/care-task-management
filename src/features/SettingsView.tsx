@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Bell, CalendarDays, Check, Clock3, Globe2, KeyRound, Languages, LogOut, MonitorSmartphone, ShieldCheck, Smartphone, Sparkles, Trash2, UserRound } from 'lucide-react'
+import { Bell, Building2, CalendarDays, Check, Clock3, Globe2, KeyRound, Languages, LogOut, MonitorSmartphone, ShieldCheck, Smartphone, Sparkles, Trash2, UserRound } from 'lucide-react'
 
-import { changePassword, confirmMfa, disableMfa, disablePushSubscription, enableWebPush, getNotificationPreference, getPushSubscriptions, getSessions, revokeOtherSessions, revokeSession, setupMfa, updateNotificationPreference, updateProfile } from '../lib/api'
+import { changePassword, confirmMfa, disableMfa, disablePushSubscription, enableWebPush, getNotificationPreference, getPushSubscriptions, getSessions, revokeOtherSessions, revokeSession, setupMfa, updateNotificationPreference, updateOrganization, updateProfile } from '../lib/api'
 import { clearOfflineData } from '../lib/offline'
 import type { DeviceSession, NotificationPreference, PushSubscription, Session } from '../lib/types'
 import { PageHeader } from '../components/PageHeader'
@@ -22,6 +22,8 @@ const copy = {
   en: {
     eyebrow: 'PERSONAL WORKSPACE', title: 'Settings', description: 'Shape a calmer, safer care workspace for every shift.',
     profile: 'Your profile', profileDetail: 'Keep your contact details current for care-team handovers.', saveProfile: 'Save changes', saved: 'Profile saved',
+    orgPolicy: 'Organization policies', orgPolicyDetail: 'Configure care permissions and capabilities for this organization.',
+    allowFamily: 'Allow family task completion', allowFamilyDetail: 'When enabled, verified family members assigned to the patient can tick routine care tasks and log meal intake.', orgSaved: 'Organization settings updated',
     preferences: 'Workspace preferences', preferencesDetail: 'Language, direction, and calendar stay with this device.',
     language: 'Language & calendar', languageDetail: 'Choose how dates and the care workspace are displayed.',
     english: 'English', englishDetail: 'Gregorian calendar · left-to-right', persian: 'فارسی', persianDetail: 'تقویم جلالی · راست‌به‌چپ',
@@ -35,6 +37,8 @@ const copy = {
   fa: {
     eyebrow: 'فضای کاری شخصی', title: 'تنظیمات', description: 'فضای کاری مراقبت را برای هر شیفت، آرام‌تر و ایمن‌تر تنظیم کنید.',
     profile: 'پروفایل شما', profileDetail: 'اطلاعات تماس را برای تحویل شیفت و تیم مراقبت به‌روز نگه دارید.', saveProfile: 'ذخیره تغییرات', saved: 'پروفایل ذخیره شد',
+    orgPolicy: 'سیاست‌های سازمان', orgPolicyDetail: 'دسترسی‌ها و اختیارات مراقبت را برای این سازمان تنظیم کنید.',
+    allowFamily: 'امکان تکمیل وظایف توسط خانواده', allowFamilyDetail: 'در صورت فعال‌سازی، اعضای تأییدشده خانواده می‌توانند وظایف عادی مراقبت را تیک بزنند و وعده غذایی را ثبت کنند.', orgSaved: 'تنظیمات سازمان ذخیره شد',
     preferences: 'تنظیمات فضای کاری', preferencesDetail: 'زبان، جهت نوشتار و تقویم در این دستگاه حفظ می‌شوند.',
     language: 'زبان و تقویم', languageDetail: 'نحوه نمایش تاریخ‌ها و محیط مراقبت را انتخاب کنید.',
     english: 'انگلیسی', englishDetail: 'تقویم میلادی · چپ‌به‌راست', persian: 'فارسی', persianDetail: 'تقویم جلالی · راست‌به‌چپ',
@@ -61,6 +65,7 @@ export default function SettingsView({ session, onSignOut, notify, locale, onLoc
   const [mfaEnabled, setMfaEnabled] = useState(session.user.mfa_enabled)
   const [disableCode, setDisableCode] = useState('')
   const [profile, setProfile] = useState({ first_name: session.user.first_name, last_name: session.user.last_name, email: session.user.email, phone: session.user.phone || '' })
+  const [allowFamilyCompletion, setAllowFamilyCompletion] = useState(session.user.allow_family_task_completion ?? false)
   const [password, setPassword] = useState({ current: '', next: '', confirmation: '' })
   const [changingPassword, setChangingPassword] = useState(false)
   const [eraseReady, setEraseReady] = useState(false)
@@ -79,6 +84,19 @@ export default function SettingsView({ session, onSignOut, notify, locale, onLoc
   const startMfa = async () => { const result = await setupMfa(session.token); setMfaQrFailed(false); setMfaSetup(result) }
   const finishMfa = async () => { await confirmMfa(session.token, mfaCode); setMfaEnabled(true); setMfaSetup(null); setMfaCode(''); notify(text.mfaEnabled) }
   const handleLocale = (value: 'en' | 'fa') => { onLocale(value); notify(value === 'fa' ? 'زبان فارسی و تقویم جلالی فعال شد' : 'English and the Gregorian calendar are active') }
+  const handleFamilyToggle = async (val: boolean) => {
+    setAllowFamilyCompletion(val)
+    const orgId = session.user.active_organization_id || session.user.organization
+    if (orgId) {
+      try {
+        await updateOrganization(session.token, orgId, { allow_family_task_completion: val })
+        notify(text.orgSaved)
+      } catch (err) {
+        setAllowFamilyCompletion(!val)
+        notify(err instanceof Error ? err.message : 'Error updating organization')
+      }
+    }
+  }
 
   return <>
     <PageHeader eyebrow={text.eyebrow} title={text.title} description={text.description} />
@@ -96,6 +114,18 @@ export default function SettingsView({ session, onSignOut, notify, locale, onLoc
           <div className="profile-form-row"><label><span>{isPersian ? 'ایمیل' : 'Email'}</span><input type="email" dir="ltr" value={profile.email} onChange={(event) => setProfile({ ...profile, email: event.target.value })} /></label><label><span>{isPersian ? 'شماره تلفن' : 'Phone'}</span><input dir="ltr" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} /></label></div>
           <button className="secondary-button" onClick={async () => { await updateProfile(session.token, session.user.id, { ...profile, phone: profile.phone || null }); notify(text.saved) }}><Check />{text.saveProfile}</button>
         </section>
+
+        {session.user.role === 'ADMIN' && (
+          <section className="main-card settings-card settings-section">
+            <SectionHeading icon={<Building2 />} title={text.orgPolicy} detail={text.orgPolicyDetail} />
+            <Toggle
+              title={text.allowFamily}
+              detail={text.allowFamilyDetail}
+              checked={allowFamilyCompletion}
+              onChange={handleFamilyToggle}
+            />
+          </section>
+        )}
 
         <section className="main-card settings-card settings-section">
           <SectionHeading icon={<Languages />} title={text.language} detail={text.languageDetail} />

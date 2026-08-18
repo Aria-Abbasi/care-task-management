@@ -4,13 +4,15 @@ from django.utils import timezone
 
 from apps.common.timezones import patient_timezone
 
-from .models import TaskOccurrence, TaskSchedule
+from .models import Task, TaskOccurrence, TaskSchedule
 
 
 def generate_occurrences_for_date(target_date, patient=None):
     """Idempotently generate calendar-based occurrences for one local date."""
     created = 0
-    schedules = TaskSchedule.objects.select_related("task", "task__patient", "task__patient__organization").filter(task__active=True)
+    schedules = TaskSchedule.objects.select_related("task", "task__patient", "task__patient__organization").filter(
+        task__active=True, task__schedule_type=Task.ScheduleType.SCHEDULED
+    )
     if patient is not None:
         schedules = schedules.filter(task__patient=patient)
     for schedule in schedules:

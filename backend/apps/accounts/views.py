@@ -213,12 +213,22 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     serializer_class = OrganizationSerializer
-    permission_classes = [IsCareAdmin]
+
+    def get_permissions(self):
+        if self.action in {"create", "destroy"}:
+            return [permissions.IsAdminUser()]
+        if self.action in {"update", "partial_update"}:
+            return [IsCareAdmin()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         if self.request.user.is_superuser:
-            return Organization.objects.all()
-        return Organization.objects.filter(pk=self.request.user.organization_id)
+            return Organization.objects.filter(active=True)
+        user = self.request.user
+        member_org_ids = list(user.organization_memberships.filter(active=True).values_list("organization_id", flat=True))
+        if user.organization_id and user.organization_id not in member_org_ids:
+            member_org_ids.append(user.organization_id)
+        return Organization.objects.filter(id__in=member_org_ids, active=True)
 
     def perform_create(self, serializer):
         if not self.request.user.is_superuser:
@@ -230,6 +240,20 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only platform administrators can deactivate organizations.")
         instance.active = False
         instance.save(update_fields=["active", "updated_at"])
+
+    @action(detail=True, methods=["post"])
+    def switch(self, request, pk=None):
+        org = self.get_object()
+        user = request.user
+        if not (
+            user.is_superuser
+            or user.organization_id == org.id
+            or user.organization_memberships.filter(organization=org, active=True).exists()
+        ):
+            raise PermissionDenied("You do not have access to this organization.")
+        user.organization = org
+        user.save(update_fields=["organization"])
+        return Response(UserSerializer(user, context={"request": request}).data)
 
 
 class UserViewSet(viewsets.ModelViewSet):

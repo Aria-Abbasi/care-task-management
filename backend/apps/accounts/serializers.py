@@ -10,7 +10,17 @@ User = get_user_model()
 class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "name", "slug", "country_code", "timezone", "active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "country_code",
+            "timezone",
+            "active",
+            "allow_family_task_completion",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -18,6 +28,9 @@ class UserSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(read_only=True)
     password = serializers.CharField(write_only=True, required=False, min_length=8)
     organization_name = serializers.CharField(source="organization.name", read_only=True)
+    organizations = serializers.SerializerMethodField()
+    active_organization_id = serializers.SerializerMethodField()
+    allow_family_task_completion = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -32,11 +45,62 @@ class UserSerializer(serializers.ModelSerializer):
             "role",
             "organization",
             "organization_name",
+            "organizations",
+            "active_organization_id",
+            "allow_family_task_completion",
             "password",
             "is_active",
             "mfa_enabled",
         ]
-        read_only_fields = ["id", "mfa_enabled"]
+        read_only_fields = ["id", "mfa_enabled", "organizations", "active_organization_id", "allow_family_task_completion"]
+
+    def get_organizations(self, obj):
+        if obj.is_superuser:
+            return list(
+                Organization.objects.filter(active=True).values("id", "name", "slug", "country_code", "timezone", "allow_family_task_completion")
+            )
+        orgs = {}
+        if obj.organization and obj.organization.active:
+            orgs[obj.organization.id] = {
+                "id": obj.organization.id,
+                "name": obj.organization.name,
+                "slug": obj.organization.slug,
+                "country_code": obj.organization.country_code,
+                "timezone": obj.organization.timezone,
+                "allow_family_task_completion": obj.organization.allow_family_task_completion,
+                "role": obj.role,
+            }
+        for mem in obj.organization_memberships.filter(active=True, organization__active=True).select_related("organization"):
+            org = mem.organization
+            orgs[org.id] = {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "country_code": org.country_code,
+                "timezone": org.timezone,
+                "allow_family_task_completion": org.allow_family_task_completion,
+                "role": mem.role or obj.role,
+            }
+        return list(orgs.values())
+
+    def get_active_organization_id(self, obj):
+        from apps.accounts.context import get_active_organization_id
+
+        request = self.context.get("request")
+        return get_active_organization_id(obj, request)
+
+    def get_allow_family_task_completion(self, obj):
+        from apps.accounts.context import get_active_organization_id
+
+        request = self.context.get("request")
+        active_id = get_active_organization_id(obj, request)
+        if active_id:
+            org = Organization.objects.filter(pk=active_id).first()
+            if org:
+                return org.allow_family_task_completion
+        if obj.organization:
+            return obj.organization.allow_family_task_completion
+        return False
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)

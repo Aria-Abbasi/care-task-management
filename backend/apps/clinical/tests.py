@@ -85,6 +85,8 @@ class ClinicalMealTrackingTests(APITestCase):
             instructions="Serve warm with soft steamed broccoli and carrots.",
             created_by=self.caregiver,
         )
+        self.organization.allow_family_task_completion = True
+        self.organization.save()
         self.client.force_authenticate(self.family)
         response = self.client.post(
             "/api/v1/food-intake-logs/",

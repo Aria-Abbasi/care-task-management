@@ -41,6 +41,7 @@ import {
   skipOccurrence,
   getVitalOptions,
   createCustomVitalType,
+  switchOrganization,
 } from './lib/api'
 import {
   cacheDashboard, cachePatients, clearOfflineData, listMutations, pendingMutationCount, queuedMutationOwners,
@@ -703,6 +704,25 @@ function App() {
     ...patients.map((item) => ({ id: 'today' as View, title: item.full_name, detail: isPersian ? 'فرد تحت مراقبت' : 'Person receiving care' })),
   ]
 
+  const handleSwitchOrg = async (orgId: number) => {
+    if (!session) return
+    try {
+      const updatedUser = await switchOrganization(session.token, orgId)
+      const newSession = { ...session, user: updatedUser }
+      setSession(newSession)
+      saveSession(newSession, true)
+      localStorage.setItem('active_org_id', String(orgId))
+      const freshPatients = await getPatients(session.token)
+      setPatients(freshPatients)
+      if (freshPatients.length > 0) {
+        await refreshWorkspace(newSession, freshPatients[0].id, selectedDate)
+      }
+      notify(locale === 'fa' ? 'سازمان فعال تغییر یافت' : 'Active organization switched')
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed to switch organization')
+    }
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">{shellCopy.skip}</a>
@@ -729,7 +749,7 @@ function App() {
           ))}
         </nav>
         <ShiftCard shifts={currentShifts} userId={user.id} locale={locale} />
-        <SidebarAccountMenu user={user} roleLabel={shellCopy.role[user.role]} copy={shellCopy} online={online} syncing={syncing} pendingSync={pendingSync} syncLabel={shellCopy.synced} onSettings={() => { navigate('settings'); setMobileMenu(false) }} onSwitchPatient={() => setPatientMenu(true)} onSignOut={signOut} />
+        <SidebarAccountMenu user={user} roleLabel={shellCopy.role[user.role]} copy={shellCopy} online={online} syncing={syncing} pendingSync={pendingSync} syncLabel={shellCopy.synced} onSettings={() => { navigate('settings'); setMobileMenu(false) }} onSwitchPatient={() => setPatientMenu(true)} onSwitchOrg={handleSwitchOrg} onSignOut={signOut} />
       </aside>
 
       {mobileMenu && <button className="backdrop" onClick={() => setMobileMenu(false)} aria-label={shellCopy.closeMenu} />}
@@ -747,7 +767,7 @@ function App() {
             </button>
             <button className="icon-button search-button" aria-label={shellCopy.search} onClick={() => setSearchOpen(true)}><Search size={19} /></button>
             <button className="icon-button notification-button" onClick={() => { setNotificationPanel(!notificationPanel); loadNotifications().catch(() => undefined) }} aria-label={shellCopy.unread(notifications.filter((item) => item.state === 'UNREAD').length)} aria-expanded={notificationPanel}><Bell size={19} />{notifications.some((item) => item.state === 'UNREAD') && <i />}</button>
-            <TopAccountMenu user={user} roleLabel={shellCopy.role[user.role]} copy={shellCopy} online={online} syncing={syncing} pendingSync={pendingSync} syncLabel={syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending(pendingSync) : shellCopy.synced} onSettings={() => navigate('settings')} onSwitchPatient={() => setPatientMenu(true)} onSignOut={signOut} />
+            <TopAccountMenu user={user} roleLabel={shellCopy.role[user.role]} copy={shellCopy} online={online} syncing={syncing} pendingSync={pendingSync} syncLabel={syncing ? shellCopy.syncing : !online ? shellCopy.offline : pendingSync ? shellCopy.pending(pendingSync) : shellCopy.synced} onSettings={() => navigate('settings')} onSwitchPatient={() => setPatientMenu(true)} onSwitchOrg={handleSwitchOrg} onSignOut={signOut} />
           </div>
         </header>
 

@@ -21,10 +21,21 @@ class Task(TimeStampedModel):
         HIGH = "HIGH", "High"
         URGENT = "URGENT", "Urgent"
 
+    class ScheduleType(models.TextChoices):
+        SCHEDULED = "SCHEDULED", "Scheduled"
+        ON_DEMAND = "ON_DEMAND", "On Demand (Quick Log)"
+
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="tasks")
     title = models.CharField(max_length=200)
     category = models.CharField(max_length=24, choices=Category.choices)
     priority = models.CharField(max_length=12, choices=Priority.choices, default=Priority.NORMAL)
+    schedule_type = models.CharField(
+        max_length=16,
+        choices=ScheduleType.choices,
+        default=ScheduleType.SCHEDULED,
+        db_index=True,
+        help_text="Scheduled tasks generate periodic occurrences; On-demand tasks are logged directly on the fly.",
+    )
     instructions = models.TextField(blank=True)
     expected_outcome = models.TextField(blank=True)
     safety_notes = models.TextField(blank=True)
