@@ -103,6 +103,25 @@ export type TaskTemplate = {
   schedules: TaskSchedule[]
 }
 
+export type SuggestedQuickAction = {
+  id: number | null
+  title: string
+  title_en?: string
+  category: TaskTemplate['category']
+  icon: string
+  time_context_count: number
+  total_count: number
+  default_note?: string
+  default_note_en?: string
+  is_on_demand_task: boolean
+}
+
+export type SuggestedQuickActionsResponse = {
+  time_window: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT'
+  hour: number
+  suggestions: SuggestedQuickAction[]
+}
+
 export type OrganizationTaskTemplate = {
   id: number
   name: string

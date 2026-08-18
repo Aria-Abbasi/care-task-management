@@ -1,6 +1,6 @@
 import { listMutations, queueMutation, removeMutation, updateMutation, type QueuedMutation } from './offline'
 import { createContractTransport, type ApiPath } from './generated-api'
-import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, FoodIntakeLog, MealDefinition, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
+import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, FoodIntakeLog, MealDefinition, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, SuggestedQuickActionsResponse, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
 
 const API_ROOT = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 const SESSION_KEY = 'haven.session'
@@ -294,6 +294,11 @@ export async function createAdHocTask(
       client_reference: payload.client_reference || crypto.randomUUID(),
     }),
   }, token)
+}
+
+export async function getSuggestedQuickActions(token: string, patientId: number, hour?: number): Promise<SuggestedQuickActionsResponse> {
+  const query = hour !== undefined ? `?patient=${patientId}&hour=${hour}` : `?patient=${patientId}`
+  return request<SuggestedQuickActionsResponse>(`/tasks/suggested-quick-actions/${query}`, {}, token)
 }
 
 export const switchOrganization = async (token: string, orgId: number) => {

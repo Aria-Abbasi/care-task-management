@@ -880,3 +880,123 @@ class CareApiTests(APITestCase):
         self.assertIn(other_patient.id, scoped_patient_ids)
         self.assertNotIn(self.patient.id, scoped_patient_ids)
 
+    def test_suggested_quick_actions_fallback_for_new_patient(self):
+        self.authenticate()
+        new_patient = Patient.objects.create(
+            first_name="New",
+            last_name="Patient",
+            birth_date=date(1960, 1, 1),
+            gender=Patient.Gender.FEMALE,
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(patient=new_patient, user=self.caregiver, relationship="Primary Nurse", active=True)
+
+        # Test morning window (hour=8)
+        resp_morning = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={new_patient.id}&hour=8")
+        self.assertEqual(resp_morning.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_morning.data["time_window"], "MORNING")
+        self.assertGreaterEqual(len(resp_morning.data["suggestions"]), 3)
+        self.assertTrue(any("Hydration" in s["title_en"] or "آب‌رسانی" in s["title"] for s in resp_morning.data["suggestions"]))
+
+        # Test afternoon window (hour=14)
+        resp_afternoon = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={new_patient.id}&hour=14")
+        self.assertEqual(resp_afternoon.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_afternoon.data["time_window"], "AFTERNOON")
+
+        # Test evening window (hour=20)
+        resp_evening = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={new_patient.id}&hour=20")
+        self.assertEqual(resp_evening.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_evening.data["time_window"], "EVENING")
+
+        # Test night window (hour=2)
+        resp_night = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={new_patient.id}&hour=2")
+        self.assertEqual(resp_night.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_night.data["time_window"], "NIGHT")
+
+    def test_suggested_quick_actions_ranking_by_time_window(self):
+        from datetime import datetime as dt
+        from apps.common.timezones import patient_timezone
+
+        self.authenticate()
+        tz = patient_timezone(self.patient)
+
+        # Create morning task & completions
+        morning_task = Task.objects.create(
+            patient=self.patient,
+            title="Morning Water Assistance",
+            category=Task.Category.PERSONAL_CARE,
+            schedule_type=Task.ScheduleType.ON_DEMAND,
+            active=True,
+        )
+        # Create 3 morning occurrences at 08:00
+        for i in range(1, 4):
+            occ_time = timezone.make_aware(dt(2026, 8, i, 8, 30), tz)
+            occ = TaskOccurrence.objects.create(
+                task=morning_task,
+                scheduled_at=occ_time,
+                status=TaskOccurrence.Status.DONE,
+                completed_at=occ_time,
+                completed_by=self.caregiver,
+                outcome="COMPLETED",
+            )
+            CompletionLog.objects.create(occurrence=occ, completed_by=self.caregiver, outcome="COMPLETED", note="Drank 250ml")
+
+        # Create night task & completions
+        night_task = Task.objects.create(
+            patient=self.patient,
+            title="Night Repositioning Turn",
+            category=Task.Category.PERSONAL_CARE,
+            schedule_type=Task.ScheduleType.ON_DEMAND,
+            active=True,
+        )
+        # Create 3 night occurrences at 23:30
+        for i in range(1, 4):
+            occ_time = timezone.make_aware(dt(2026, 8, i, 23, 30), tz)
+            occ = TaskOccurrence.objects.create(
+                task=night_task,
+                scheduled_at=occ_time,
+                status=TaskOccurrence.Status.DONE,
+                completed_at=occ_time,
+                completed_by=self.caregiver,
+                outcome="COMPLETED",
+            )
+            CompletionLog.objects.create(occurrence=occ, completed_by=self.caregiver, outcome="COMPLETED", note="Turned to left")
+
+        # Query morning (hour=9): Morning Water Assistance should be ranked #1
+        resp_morning = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={self.patient.id}&hour=9")
+        self.assertEqual(resp_morning.status_code, status.HTTP_200_OK)
+        first_morning_sugg = resp_morning.data["suggestions"][0]
+        self.assertEqual(first_morning_sugg["title"], "Morning Water Assistance")
+        self.assertEqual(first_morning_sugg["time_context_count"], 3)
+        self.assertEqual(first_morning_sugg["total_count"], 3)
+        self.assertEqual(first_morning_sugg["id"], morning_task.id)
+
+        # Query night (hour=23): Night Repositioning Turn should be ranked #1
+        resp_night = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={self.patient.id}&hour=23")
+        self.assertEqual(resp_night.status_code, status.HTTP_200_OK)
+        first_night_sugg = resp_night.data["suggestions"][0]
+        self.assertEqual(first_night_sugg["title"], "Night Repositioning Turn")
+        self.assertEqual(first_night_sugg["time_context_count"], 3)
+
+    def test_suggested_quick_actions_permission_and_patients_endpoint(self):
+        self.authenticate()
+
+        # Unassigned patient
+        other_patient = Patient.objects.create(
+            first_name="Unassigned",
+            last_name="Patient",
+            birth_date=date(1970, 1, 1),
+            gender=Patient.Gender.MALE,
+            organization=self.organization,
+        )
+
+        resp = self.client.get(f"/api/v1/tasks/suggested-quick-actions/?patient={other_patient.id}")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Test PatientViewSet action endpoint
+        resp_patient_action = self.client.get(f"/api/v1/patients/{self.patient.id}/suggested-actions/?hour=10")
+        self.assertEqual(resp_patient_action.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_patient_action.data["time_window"], "MORNING")
+        self.assertIn("suggestions", resp_patient_action.data)
+
+

@@ -141,6 +141,24 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
             )
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"], url_path="suggested-quick-actions")
+    def suggested_quick_actions(self, request):
+        patient_id = request.query_params.get("patient")
+        if not patient_id:
+            return Response({"patient": ["This query parameter is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        patient = Patient.objects.filter(pk=patient_id).first()
+        if not patient:
+            return Response({"patient": ["Patient not found."]}, status=status.HTTP_404_NOT_FOUND)
+        self.validate_patient_access(patient)
+
+        hour_param = request.query_params.get("hour")
+        target_hour = int(hour_param) if hour_param and hour_param.isdigit() else None
+
+        from .services import get_suggested_quick_actions
+
+        data = get_suggested_quick_actions(patient, target_hour=target_hour)
+        return Response(data, status=status.HTTP_200_OK)
+
 
 class CareTaskTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = CareTaskTemplateSerializer

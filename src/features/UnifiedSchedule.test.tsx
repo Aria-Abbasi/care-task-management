@@ -50,4 +50,14 @@ describe('care schedule status filters', () => {
     for (const label of ['All', 'Completed', 'Pending', 'Overdue']) expect(english).toContain(label)
     for (const label of ['همه', 'انجام‌شده', 'در انتظار', 'سررسید گذشته']) expect(persian).toContain(label)
   })
+
+  it('renders quick action smart suggestions section for caregivers', () => {
+    const session = { token: 'test', user: { id: 1, role: 'CAREGIVER' } } as Session
+    const patient = { id: 7, full_name: 'Maryam Abbasi' } as Patient
+    const html = renderToStaticMarkup(<UnifiedSchedule session={session} patient={patient} selectedDate="2026-08-16" locale="fa" onDate={vi.fn()} onRecordOccurrence={vi.fn()} onAdd={vi.fn()} />)
+
+    expect(html).toContain('پیشنهادهای هوشمند')
+    expect(html).toContain('ثبت کار مراقبتی موردی')
+  })
 })
+

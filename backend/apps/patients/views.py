@@ -161,6 +161,16 @@ class PatientViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["get"], url_path="suggested-actions")
+    def suggested_actions(self, request, pk=None):
+        patient = self.get_object()
+        hour_param = request.query_params.get("hour")
+        target_hour = int(hour_param) if hour_param and hour_param.isdigit() else None
+        from apps.care_tasks.services import get_suggested_quick_actions
+
+        data = get_suggested_quick_actions(patient, target_hour=target_hour)
+        return Response(data, status=status.HTTP_200_OK)
+
 
 class CareAssignmentViewSet(viewsets.ModelViewSet):
     serializer_class = CareAssignmentSerializer
