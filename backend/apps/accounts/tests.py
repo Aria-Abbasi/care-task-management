@@ -687,3 +687,38 @@ class MfaStatePreservationTests(APITestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.mfa_enabled)
         self.assertEqual(self.user.mfa_secret, new_secret)
+
+
+class InactiveOrganizationSessionTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Closing Hospital", slug="closing-hospital", active=True)
+        self.user = User.objects.create_user(
+            username="staff_member",
+            email="staff@example.com",
+            password="StrongPassword123!",
+            role=User.Role.CAREGIVER,
+            organization=self.org,
+        )
+
+    def test_inactive_organization_rejects_session_authentication(self):
+        # 1. Login to get a session token
+        login_resp = self.client.post(
+            "/api/v1/auth/login/",
+            {"login": self.user.email, "password": "StrongPassword123!"},
+            format="json",
+        )
+        self.assertEqual(login_resp.status_code, 200)
+        token = login_resp.data["token"]
+
+        # 2. Token works initially
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        resp = self.client.get("/api/v1/auth/me/")
+        self.assertEqual(resp.status_code, 200)
+
+        # 3. Deactivate organization
+        self.org.active = False
+        self.org.save()
+
+        # 4. Token must now be rejected
+        resp_after = self.client.get("/api/v1/auth/me/")
+        self.assertEqual(resp_after.status_code, 401)

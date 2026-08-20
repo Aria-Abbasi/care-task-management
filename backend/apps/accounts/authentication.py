@@ -28,7 +28,15 @@ class ExpiringSessionAuthentication(authentication.BaseAuthentication):
         )
         if not session or not session.active or not session.user.is_active:
             raise exceptions.AuthenticationFailed("Session expired or revoked.")
+        if not session.user.is_superuser:
+            has_active_primary = bool(session.user.organization and session.user.organization.active)
+            has_active_membership = session.user.organization_memberships.filter(active=True, organization__active=True).exists()
+            if not has_active_primary and not has_active_membership:
+                raise exceptions.AuthenticationFailed("Session expired or organization inactive.")
         if session.last_used_at is None or session.last_used_at < timezone.now() - timedelta(minutes=5):
             session.last_used_at = timezone.now()
             session.save(update_fields=["last_used_at", "updated_at"])
         return session.user, session
+
+    def authenticate_header(self, request):
+        return self.keyword

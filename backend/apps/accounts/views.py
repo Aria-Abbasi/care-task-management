@@ -247,6 +247,12 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only platform administrators can deactivate organizations.")
         instance.active = False
         instance.save(update_fields=["active", "updated_at"])
+        org_users = User.objects.filter(Q(organization=instance) | Q(organization_memberships__organization=instance)).distinct()
+        for u in org_users:
+            has_other_primary = bool(u.organization and u.organization.active and u.organization_id != instance.id)
+            has_other_membership = u.organization_memberships.filter(active=True, organization__active=True).exclude(organization=instance).exists()
+            if not has_other_primary and not has_other_membership and not u.is_superuser:
+                u.session_tokens.filter(revoked_at__isnull=True).update(revoked_at=timezone.now())
 
     @action(detail=True, methods=["post"])
     def switch(self, request, pk=None):
