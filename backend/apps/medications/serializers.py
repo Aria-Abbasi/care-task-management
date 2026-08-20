@@ -89,6 +89,8 @@ class MedicationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         from apps.clinical.models import Allergy
 
+        if self.instance and "patient" in attrs and attrs["patient"] != self.instance.patient:
+            raise serializers.ValidationError({"patient": "Medications cannot be moved to another patient."})
         patient = attrs.get("patient", getattr(self.instance, "patient", None))
         name = attrs.get("name", getattr(self.instance, "name", ""))
         if patient and Allergy.objects.filter(patient=patient, active=True, substance__iexact=name).exists():
@@ -442,6 +444,8 @@ class DoseOutcomeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         dose = self.context["dose"]
+        if dose.medication.approval_status != Medication.ApprovalStatus.APPROVED:
+            raise serializers.ValidationError("This medication order is not clinically approved.")
         reference = attrs.get("client_reference")
         if reference and dose.client_reference == reference and dose.status == attrs["status"]:
             self.replay = True
@@ -490,6 +494,8 @@ class CorrectDoseSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         dose = self.context["dose"]
+        if dose.medication.approval_status != Medication.ApprovalStatus.APPROVED:
+            raise serializers.ValidationError("This medication order is not clinically approved.")
         reference = attrs.get("client_reference")
         if reference:
             existing = DoseCorrection.objects.filter(client_reference=reference).first()
