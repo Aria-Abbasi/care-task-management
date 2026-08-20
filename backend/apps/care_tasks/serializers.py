@@ -126,6 +126,8 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        if self.instance and "patient" in attrs and attrs["patient"] != self.instance.patient:
+            raise serializers.ValidationError({"patient": "Tasks cannot be moved to another patient."})
         patient = attrs.get("patient", getattr(self.instance, "patient", None))
         assigned_to = attrs.get("assigned_to", getattr(self.instance, "assigned_to", None))
         schedules = attrs.get("schedules")

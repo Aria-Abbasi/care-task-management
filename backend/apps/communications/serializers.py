@@ -52,7 +52,10 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if not attrs.get("body") and not attrs.get("attachment") and not attrs.get("voice_note"):
-            raise serializers.ValidationError("A message needs text, an attachment, or a voice note.")
+            if not self.instance or (not self.instance.body and not self.instance.attachment and not self.instance.voice_note):
+                raise serializers.ValidationError("A message needs text, an attachment, or a voice note.")
+        if self.instance and "conversation" in attrs and attrs["conversation"] != self.instance.conversation:
+            raise serializers.ValidationError({"conversation": "Messages cannot be moved to another conversation."})
         conversation = attrs.get("conversation", getattr(self.instance, "conversation", None))
         for user in attrs.get("mentions", []):
             if conversation and not conversation.participants.filter(pk=user.pk).exists():
@@ -82,6 +85,11 @@ class ConversationSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        if self.instance and "patient" in attrs and attrs["patient"] != self.instance.patient:
+            raise serializers.ValidationError({"patient": "Conversations cannot be moved to another patient."})
+        return attrs
 
     def get_latest_message(self, obj):
         message = obj.messages.last()
