@@ -1,0 +1,245 @@
+openapi: 3.1.0
+info:
+  title: Haven Care API
+  version: 1.0.0
+  description: Assignment-scoped care execution, clinical collaboration, notifications, and FHIR exchange.
+servers:
+  - url: /api/v1
+security:
+  - sessionToken: []
+components:
+  securitySchemes:
+    sessionToken:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Use `Token <expiring-session-token>`.
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail: {type: string}
+    Paginated:
+      type: object
+      properties:
+        count: {type: integer}
+        next: {type: [string, 'null']}
+        previous: {type: [string, 'null']}
+        results: {type: array, items: {type: object}}
+paths:
+  /auth/login/:
+    post:
+      security: []
+      summary: Sign in with password and optional TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login: {type: string}
+                password: {type: string, format: password}
+                mfa_code: {type: string}
+                device_name: {type: string}
+      responses:
+        '200': {description: Expiring session token issued}
+        '400': {description: Invalid credentials or MFA code}
+        '429': {description: Sign-in rate limited}
+  /auth/rotate/:
+    post:
+      summary: Rotate the current session token
+      responses:
+        '200': {description: Replacement token issued and old token revoked}
+  /auth/password-reset/:
+    post:
+      security: []
+      summary: Request password reset instructions
+      responses:
+        '202': {description: Generic accepted response}
+  /patients/:
+    get:
+      summary: List patients visible through organization and assignment boundaries
+      responses:
+        '200': {description: Patient list}
+  /assignments/:
+    get:
+      summary: List care-team assignments for accessible patients
+      responses:
+        '200': {description: Assignment list}
+  /tasks/:
+    get:
+      summary: List all task definitions independently of the displayed day
+      responses:
+        '200': {description: Task definition list}
+    post:
+      summary: Create a structured task definition and schedules
+      responses:
+        '201': {description: Task created}
+  /task-templates/:
+    get:
+      summary: List reusable organization task templates
+      responses:
+        '200': {description: Task template list}
+  /patients/{id}/dashboard/:
+    get:
+      summary: Daily task, dose, medication, and vital dashboard
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: date, in: query, schema: {type: string, format: date}}
+      responses:
+        '200': {description: Daily care dashboard}
+  /occurrences/{id}/complete/:
+    post:
+      summary: Record a version-checked task outcome
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Outcome recorded}
+        '409': {description: Version conflict}
+  /occurrences/{id}/correct/:
+    post:
+      summary: Append a task correction without removing the original
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Correction appended}
+  /occurrences/{id}/delay/:
+    post:
+      summary: Delay an occurrence with version checking and an audited reason
+      responses:
+        '200': {description: Occurrence delayed}
+  /occurrences/{id}/skip/:
+    post:
+      summary: Skip an occurrence with a documented unable or refused outcome
+      responses:
+        '200': {description: Occurrence skipped}
+  /dose-logs/{id}/administer/:
+    post:
+      summary: Administer after five-right verification and daily-dose checks
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Dose administered}
+        '409': {description: Version conflict}
+  /notifications/:
+    get:
+      summary: List assignment-scoped care notifications and delivery states
+      responses:
+        '200': {description: Notification list}
+  /notification-preferences/:
+    get:
+      summary: Read server-backed channel and quiet-hour preferences
+      responses:
+        '200': {description: Notification preferences}
+  /push-subscriptions/:
+    get:
+      summary: List this user's browser push subscriptions
+      responses:
+        '200': {description: Push subscription list}
+    post:
+      summary: Register or refresh a browser Push API subscription
+      responses:
+        '201': {description: Subscription registered}
+  /medications/barcode/:
+    get:
+      summary: Match an active assigned-patient medication barcode
+      parameters:
+        - {name: code, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Medication matched}
+        '404': {description: No safe match}
+  /medications/{id}/prn-dose/:
+    post:
+      summary: Record an as-needed dose after five-right and maximum-dose checks
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '201': {description: PRN dose administered}
+        '400': {description: Order, verification, date, or daily-limit violation}
+  /refill-requests/:
+    post:
+      summary: Create a medication refill request
+      responses:
+        '201': {description: Refill request recorded}
+  /allergies/:
+    get:
+      summary: List assignment-scoped allergy and contraindication records
+      responses:
+        '200': {description: Allergy list}
+  /diagnoses/:
+    get:
+      summary: List diagnoses with clinical coding provenance
+      responses:
+        '200': {description: Diagnosis list}
+  /care-plans/:
+    get:
+      summary: List patient care plans and goals
+      responses:
+        '200': {description: Care plan list}
+  /clinical-documents/:
+    get:
+      summary: List secure retained clinical documents
+      responses:
+        '200': {description: Document list}
+  /conversations/:
+    get:
+      summary: List patient-specific conversations for the current participant
+      responses:
+        '200': {description: Conversation list}
+  /messages/:
+    get:
+      summary: List messages, attachments, voice notes, mentions, and read receipts
+      responses:
+        '200': {description: Message list}
+  /shift-assignments/:
+    get:
+      summary: List patient shift assignments and acknowledgement state
+      responses:
+        '200': {description: Shift assignment list}
+  /sessions/:
+    get:
+      summary: List the current user's expiring device sessions
+      responses:
+        '200': {description: Session list}
+  /sessions/{id}/revoke/:
+    post:
+      summary: Remotely revoke a device session
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '204': {description: Session revoked}
+  /mfa/setup/:
+    post:
+      summary: Begin authenticator TOTP enrollment
+      responses:
+        '200': {description: Secret and otpauth URI returned}
+  /escalation-policies/:
+    get:
+      summary: List organization escalation chains
+      responses:
+        '200': {description: Policies and steps}
+  /notification-deliveries/:
+    get:
+      summary: List provider receipts, failures, and dead-letter records
+      responses:
+        '200': {description: Delivery records}
+  /audit-events/signed_export/:
+    get:
+      summary: Export a canonical HMAC-signed audit record
+      responses:
+        '200': {description: Signed audit export}
+  /fhir/metadata/:
+    get:
+      summary: FHIR R5 CapabilityStatement
+      responses:
+        '200': {description: FHIR CapabilityStatement, content: {application/fhir+json: {schema: {type: object}}}}
+  /fhir/{resourceType}/:
+    get:
+      summary: Search supported FHIR resources
+      parameters:
+        - {name: resourceType, in: path, required: true, schema: {type: string}}
+        - {name: patient, in: query, schema: {type: integer}}
+      responses:
+        '200': {description: FHIR search Bundle}
