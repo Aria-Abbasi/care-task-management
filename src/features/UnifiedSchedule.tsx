@@ -10,7 +10,6 @@ import {
   Droplets,
   HeartPulse,
   Pill,
-  Plus,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -75,7 +74,6 @@ export default function UnifiedSchedule({ session, patient, selectedDate, locale
   const [adHocSubmitting, setAdHocSubmitting] = useState(false)
   const [suggestions, setSuggestions] = useState<SuggestedQuickAction[]>([])
   const [timeWindow, setTimeWindow] = useState<string>('MORNING')
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [loggingActionKey, setLoggingActionKey] = useState<string | number | null>(null)
   const [successActionKey, setSuccessActionKey] = useState<string | number | null>(null)
 
@@ -114,7 +112,6 @@ export default function UnifiedSchedule({ session, patient, selectedDate, locale
   useEffect(load, [session.token, patient.id, startKey, endKey, fa])
 
   const loadSuggestions = () => {
-    setLoadingSuggestions(true)
     getSuggestedQuickActions(session.token, patient.id)
       .then((res) => {
         setSuggestions(res.suggestions || [])
@@ -123,7 +120,6 @@ export default function UnifiedSchedule({ session, patient, selectedDate, locale
       .catch(() => {
         // graceful fallback on error
       })
-      .finally(() => setLoadingSuggestions(false))
   }
   useEffect(loadSuggestions, [session.token, patient.id])
 
