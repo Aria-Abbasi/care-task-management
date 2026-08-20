@@ -1,4 +1,4 @@
-from apps.accounts.context import get_active_organization_id
+from apps.accounts.context import get_active_organization_id, get_tenant_role
 from apps.accounts.models import OrganizationMembership, User
 
 from .models import Patient
@@ -29,6 +29,7 @@ def patients_for_user(user, request=None):
         else:
             return queryset.none()
 
-    if user.role == User.Role.ADMIN:
+    tenant_role = get_tenant_role(user, request)
+    if tenant_role == User.Role.ADMIN:
         return queryset
     return queryset.filter(care_assignments__user=user, care_assignments__active=True).distinct()

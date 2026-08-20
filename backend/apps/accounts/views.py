@@ -18,6 +18,7 @@ from rest_framework.exceptions import PermissionDenied, Throttled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.context import get_active_organization_id, get_tenant_role
 from apps.common.ip import get_client_ip
 from apps.common.permissions import IsCareAdmin
 
@@ -266,8 +267,13 @@ class UserViewSet(viewsets.ModelViewSet):
         queryset = User.objects.select_related("organization").all().order_by("first_name", "last_name")
         if self.request.user.is_superuser:
             return queryset
-        if self.request.user.role == User.Role.ADMIN:
-            return queryset.filter(organization_id=self.request.user.organization_id)
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if tenant_role == User.Role.ADMIN and active_org_id:
+            return queryset.filter(
+                Q(organization_id=active_org_id)
+                | Q(organization_memberships__organization_id=active_org_id, organization_memberships__active=True)
+            ).distinct()
         return queryset.filter(pk=self.request.user.pk)
 
     def get_permissions(self):
@@ -276,20 +282,26 @@ class UserViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
+        active_org_id = get_active_organization_id(self.request.user, self.request)
         if self.request.user.is_superuser:
             serializer.save()
-        elif self.request.user.organization_id:
-            serializer.save(organization=self.request.user.organization)
+        elif active_org_id:
+            org = Organization.objects.get(pk=active_org_id)
+            serializer.save(organization=org)
         else:
             raise PermissionDenied("An administrator must belong to an organization before creating users.")
 
     def perform_update(self, serializer):
         user = self.request.user
+        tenant_role = get_tenant_role(user, self.request)
+        active_org_id = get_active_organization_id(user, self.request)
         protected_fields = {"role", "is_active", "organization"}.intersection(serializer.validated_data)
-        if protected_fields and not (user.is_superuser or user.role == User.Role.ADMIN):
+        if protected_fields and not (user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can change role, organization, or account status.")
-        if not user.is_superuser and serializer.validated_data.get("organization", serializer.instance.organization) != user.organization:
-            raise PermissionDenied("Administrators cannot move users outside their organization.")
+        if not user.is_superuser:
+            target_org = serializer.validated_data.get("organization", serializer.instance.organization)
+            if target_org and target_org.id != active_org_id:
+                raise PermissionDenied("Administrators cannot move users outside their organization.")
         updated = serializer.save()
         if not updated.is_active:
             updated.session_tokens.filter(revoked_at__isnull=True).update(revoked_at=timezone.now())

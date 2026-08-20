@@ -6,8 +6,10 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.accounts.models import User
+from apps.accounts.context import get_active_organization_id, get_tenant_role
+from apps.accounts.models import Organization, User
 from apps.common.exceptions import VersionConflict
+from apps.common.permissions import IsCareAdmin
 from apps.common.timezones import patient_timezone
 from apps.patients.access import patients_for_user
 from apps.patients.models import Patient
@@ -19,6 +21,7 @@ from .serializers import (
     CompleteOccurrenceSerializer,
     CorrectOccurrenceSerializer,
     DelayOccurrenceSerializer,
+    SkipOccurrenceSerializer,
     TaskOccurrenceSerializer,
     TaskSerializer,
 )
@@ -34,7 +37,8 @@ class PatientAccessMixin:
             raise PermissionDenied("You are not assigned to this patient.")
 
     def require_care_role(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts can review care but cannot record or change clinical care.")
 
 
@@ -102,7 +106,8 @@ class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
     def log_action(self, request, pk=None):
         task = self.get_object()
         self.validate_patient_access(task.patient)
-        if request.user.role == User.Role.FAMILY:
+        tenant_role = get_tenant_role(request.user, request)
+        if tenant_role == User.Role.FAMILY:
             if not getattr(task.patient.organization, "allow_family_task_completion", False):
                 raise PermissionDenied("Family task completion is disabled for this organization.")
 
@@ -166,27 +171,42 @@ class CareTaskTemplateViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "title", "instructions"]
     ordering_fields = ["name", "created_at"]
 
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsCareAdmin()]
+        return super().get_permissions()
+
     def get_queryset(self):
         queryset = CareTaskTemplate.objects.select_related("organization")
         if self.request.user.is_superuser:
             return queryset
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if active_org_id:
+            return queryset.filter(organization_id=active_org_id)
         return queryset.filter(organization_id=self.request.user.organization_id)
 
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can create task templates.")
-        organization = self.request.user.organization
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if active_org_id:
+            organization = Organization.objects.get(pk=active_org_id)
+        else:
+            organization = self.request.user.organization
         if not organization:
             raise PermissionDenied("Assign this account to an organization first.")
         serializer.save(organization=organization)
 
     def perform_update(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can edit task templates.")
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can archive task templates.")
         instance.active = False
         instance.save(update_fields=["active", "updated_at"])
@@ -242,6 +262,7 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         outcome = request.data.get("outcome", CompletionLog.Outcome.COMPLETED)
 
         now = timezone.now()
+        tenant_role = get_tenant_role(request.user, request)
         with transaction.atomic():
             task = Task.objects.create(
                 patient=patient,
@@ -250,7 +271,7 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
                 priority=priority,
                 schedule_type=Task.ScheduleType.ON_DEMAND,
                 instructions=instructions,
-                assigned_to=request.user if request.user.role == User.Role.CAREGIVER else None,
+                assigned_to=request.user if tenant_role == User.Role.CAREGIVER else None,
                 active=True,
             )
             occurrence = TaskOccurrence.objects.create(
@@ -284,7 +305,8 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         occurrence = self.get_object()
-        if request.user.role == User.Role.FAMILY:
+        tenant_role = get_tenant_role(request.user, request)
+        if tenant_role == User.Role.FAMILY:
             if not getattr(occurrence.task.patient.organization, "allow_family_task_completion", False):
                 raise PermissionDenied("Family task completion is disabled for this organization.")
         serializer = CompleteOccurrenceSerializer(data=request.data, context={"request": request, "occurrence": occurrence})

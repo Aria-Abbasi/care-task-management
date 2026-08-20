@@ -7,7 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from apps.accounts.models import User
+from apps.accounts.context import get_active_organization_id, get_tenant_role
+from apps.accounts.models import Organization, User
 from apps.care_tasks.models import TaskOccurrence
 from apps.care_tasks.serializers import TaskOccurrenceSerializer
 from apps.care_tasks.services import generate_occurrences_for_date
@@ -37,24 +38,28 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def _require_admin_for_write(self):
         user = self.request.user
-        if not (user.is_superuser or user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(user, self.request)
+        if not (user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can change patient profiles.")
 
     def perform_create(self, serializer):
         self._require_admin_for_write()
+        active_org_id = get_active_organization_id(self.request.user, self.request)
         if self.request.user.is_superuser:
             if not serializer.validated_data.get("organization"):
                 raise ValidationError({"organization": "Choose the organization that owns this patient."})
             serializer.save()
-        elif self.request.user.organization_id:
-            serializer.save(organization=self.request.user.organization)
+        elif active_org_id:
+            org = Organization.objects.get(pk=active_org_id)
+            serializer.save(organization=org)
         else:
             raise PermissionDenied("An administrator must belong to an organization before creating patients.")
 
     def perform_update(self, serializer):
         self._require_admin_for_write()
         organization = serializer.validated_data.get("organization", serializer.instance.organization)
-        if not self.request.user.is_superuser and organization != self.request.user.organization:
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if not self.request.user.is_superuser and organization.id != active_org_id:
             raise PermissionDenied("Administrators cannot move patients outside their organization.")
         serializer.save()
 
@@ -177,7 +182,7 @@ class CareAssignmentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["patient", "user", "relationship", "active"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return CareAssignment.objects.filter(patient_id__in=patient_ids).select_related("user", "patient")
 
     def get_permissions(self):
@@ -188,8 +193,12 @@ class CareAssignmentViewSet(viewsets.ModelViewSet):
     def _validate_organization(self, serializer):
         patient = serializer.validated_data.get("patient", serializer.instance.patient if serializer.instance else None)
         user = serializer.validated_data.get("user", serializer.instance.user if serializer.instance else None)
-        if patient and user and patient.organization_id != user.organization_id:
-            raise PermissionDenied("Care assignments cannot cross organization boundaries.")
+        if patient and user:
+            user_org_ids = set(user.organization_memberships.filter(active=True).values_list("organization_id", flat=True))
+            if user.organization_id:
+                user_org_ids.add(user.organization_id)
+            if patient.organization_id not in user_org_ids:
+                raise PermissionDenied("Care assignments cannot cross organization boundaries.")
 
     def perform_create(self, serializer):
         self._validate_organization(serializer)

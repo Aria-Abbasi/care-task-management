@@ -11,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.context import get_active_organization_id, get_tenant_role
 from apps.common.permissions import IsCareAdmin
 from apps.patients.access import patients_for_user
 
@@ -41,7 +42,7 @@ class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["created_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return AuditEvent.objects.filter(patient_id__in=patient_ids).select_related("actor", "patient")
 
     @action(detail=False, methods=["get"])
@@ -62,7 +63,7 @@ class CareNotificationViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["created_at", "due_at", "severity"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return (
             CareNotification.objects.filter(recipient=self.request.user, patient_id__in=patient_ids)
             .select_related("patient")
@@ -180,17 +181,22 @@ class EscalationPolicyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = EscalationPolicy.objects.prefetch_related("steps")
-        return queryset if self.request.user.is_superuser else queryset.filter(organization_id=self.request.user.organization_id)
+        if self.request.user.is_superuser:
+            return queryset
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        return queryset.filter(organization_id=active_org_id)
 
     def perform_create(self, serializer):
+        active_org_id = get_active_organization_id(self.request.user, self.request)
         organization = serializer.validated_data["organization"]
-        if not self.request.user.is_superuser and organization != self.request.user.organization:
+        if not self.request.user.is_superuser and organization.id != active_org_id:
             raise PermissionDenied("Cannot create a policy for another organization.")
         serializer.save()
 
     def perform_update(self, serializer):
+        active_org_id = get_active_organization_id(self.request.user, self.request)
         organization = serializer.validated_data.get("organization", serializer.instance.organization)
-        if not self.request.user.is_superuser and organization != self.request.user.organization:
+        if not self.request.user.is_superuser and organization.id != active_org_id:
             raise PermissionDenied("Cannot move a policy outside your organization.")
         serializer.save()
 
@@ -201,7 +207,24 @@ class EscalationStepViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = EscalationStep.objects.select_related("policy", "policy__organization")
-        return queryset if self.request.user.is_superuser else queryset.filter(policy__organization_id=self.request.user.organization_id)
+        if self.request.user.is_superuser:
+            return queryset
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        return queryset.filter(policy__organization_id=active_org_id)
+
+    def perform_create(self, serializer):
+        policy = serializer.validated_data["policy"]
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if not self.request.user.is_superuser and policy.organization_id != active_org_id:
+            raise PermissionDenied("Cannot add steps to another organization's policy.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        policy = serializer.validated_data.get("policy", serializer.instance.policy)
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if not self.request.user.is_superuser and policy.organization_id != active_org_id:
+            raise PermissionDenied("Cannot move steps outside your organization.")
+        serializer.save()
 
 
 class NotificationDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -211,23 +234,10 @@ class NotificationDeliveryViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = NotificationDelivery.objects.select_related("notification", "notification__recipient")
-        return (
-            queryset
-            if self.request.user.is_superuser
-            else queryset.filter(notification__recipient__organization_id=self.request.user.organization_id)
-        )
-
-    def perform_create(self, serializer):
-        policy = serializer.validated_data["policy"]
-        if not self.request.user.is_superuser and policy.organization != self.request.user.organization:
-            raise PermissionDenied("Cannot add steps to another organization's policy.")
-        serializer.save()
-
-    def perform_update(self, serializer):
-        policy = serializer.validated_data.get("policy", serializer.instance.policy)
-        if not self.request.user.is_superuser and policy.organization != self.request.user.organization:
-            raise PermissionDenied("Cannot move steps outside your organization.")
-        serializer.save()
+        if self.request.user.is_superuser:
+            return queryset
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        return queryset.filter(notification__recipient__organization_id=active_org_id)
 
     @action(detail=True, methods=["post"])
     def retry(self, request, pk=None):

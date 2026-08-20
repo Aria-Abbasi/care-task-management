@@ -3,7 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.accounts.models import User
+from apps.accounts.context import get_active_organization_id, get_tenant_role
+from apps.accounts.models import Organization, User
 from apps.clinical.services import evaluate_vital_threshold
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
@@ -23,20 +24,28 @@ class CustomVitalTypeViewSet(viewsets.ModelViewSet):
         queryset = CustomVitalType.objects.filter(active=True).select_related("organization", "created_by")
         if self.request.user.is_superuser:
             return queryset
-        if self.request.user.organization_id:
-            return queryset.filter(organization_id=self.request.user.organization_id)
-        return queryset
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if active_org_id:
+            return queryset.filter(organization_id=active_org_id)
+        return queryset.filter(organization_id=self.request.user.organization_id)
 
     def create(self, request, *args, **kwargs):
-        if not (request.user.is_superuser or request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(request.user, request)
+        if not (request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot create custom vital types.")
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot create custom vital types.")
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if active_org_id:
+            organization = Organization.objects.get(pk=active_org_id)
+        else:
+            organization = self.request.user.organization
         vital_type = serializer.save(
-            organization=self.request.user.organization,
+            organization=organization,
             created_by=self.request.user,
         )
         record_audit(
@@ -80,7 +89,7 @@ class VitalRecordViewSet(viewsets.ModelViewSet):
     ordering_fields = ["recorded_at", "created_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         queryset = VitalRecord.objects.filter(patient_id__in=patient_ids).select_related("patient", "recorded_by")
         start = self.request.query_params.get("start")
         end = self.request.query_params.get("end")
@@ -99,10 +108,11 @@ class VitalRecordViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot record clinical observations.")
         patient = serializer.validated_data["patient"]
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         reading = serializer.save(recorded_by=self.request.user)
         record_audit(

@@ -41,3 +41,41 @@ def get_active_organization_id(user, request=None):
         return membership.organization_id
 
     return None
+
+
+def get_active_membership(user, request=None):
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    active_org_id = get_active_organization_id(user, request)
+    if not active_org_id:
+        return None
+    return (
+        OrganizationMembership.objects.filter(user=user, organization_id=active_org_id, active=True)
+        .select_related("organization")
+        .first()
+    )
+
+
+def get_tenant_role(user, request=None):
+    """
+    Returns the user's role in the active organization context.
+    - Superusers always have 'ADMIN' role.
+    - If active membership exists for the active organization, returns membership.role.
+    - If user's primary organization matches active_org_id and no membership row exists, falls back to user.role.
+    - Otherwise returns None.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    if getattr(user, "is_superuser", False):
+        return "ADMIN"
+    active_org_id = get_active_organization_id(user, request)
+    if not active_org_id:
+        return None
+    membership = OrganizationMembership.objects.filter(
+        user=user, organization_id=active_org_id, active=True
+    ).first()
+    if membership:
+        return membership.role
+    if user.organization_id == active_org_id:
+        return user.role
+    return None

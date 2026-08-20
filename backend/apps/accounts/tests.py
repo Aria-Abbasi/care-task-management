@@ -407,3 +407,165 @@ class LoginThrottlingSecurityTests(APITestCase):
                 format="json",
             )
             self.assertEqual(resp.status_code, 429)
+
+
+class TenantRoleIsolationTests(APITestCase):
+    def setUp(self):
+        self.org1 = Organization.objects.create(name="Hospital Alpha", slug="hospital-alpha")
+        self.org2 = Organization.objects.create(name="Clinic Beta", slug="clinic-beta")
+
+        # user_admin1 has global role ADMIN in org1, but CAREGIVER membership in org2
+        self.user_admin1 = User.objects.create_user(
+            username="admin_alpha",
+            email="admin_alpha@example.com",
+            password="StrongPassword123!",
+            role=User.Role.ADMIN,
+            organization=self.org1,
+        )
+        from apps.accounts.models import OrganizationMembership
+
+        self.membership_admin1_in_org2 = OrganizationMembership.objects.create(
+            user=self.user_admin1,
+            organization=self.org2,
+            role=User.Role.CAREGIVER,
+            active=True,
+        )
+
+        # Patients
+        self.patient_org1 = Patient.objects.create(
+            first_name="Patient1",
+            last_name="Alpha",
+            birth_date=date(1960, 1, 1),
+            gender=Patient.Gender.FEMALE,
+            organization=self.org1,
+        )
+        self.patient_org2_unassigned = Patient.objects.create(
+            first_name="Patient2",
+            last_name="BetaUnassigned",
+            birth_date=date(1970, 1, 1),
+            gender=Patient.Gender.MALE,
+            organization=self.org2,
+        )
+        self.patient_org2_assigned = Patient.objects.create(
+            first_name="Patient3",
+            last_name="BetaAssigned",
+            birth_date=date(1980, 1, 1),
+            gender=Patient.Gender.FEMALE,
+            organization=self.org2,
+        )
+        CareAssignment.objects.create(
+            patient=self.patient_org2_assigned,
+            user=self.user_admin1,
+            active=True,
+            relationship="Nurse",
+        )
+
+        # Escalation policy in Org2
+        from apps.safety.models import EscalationPolicy
+
+        self.policy_org2 = EscalationPolicy.objects.create(
+            name="Org2 Critical Policy",
+            organization=self.org2,
+        )
+
+    def test_get_tenant_role_resolves_correctly(self):
+        from apps.accounts.context import get_tenant_role
+
+        class DummyRequest:
+            def __init__(self, org_id):
+                self.headers = {"X-Organization-Id": str(org_id)}
+
+        # Default context (primary org1) -> ADMIN
+        self.assertEqual(get_tenant_role(self.user_admin1), User.Role.ADMIN)
+
+        # Org1 context -> ADMIN
+        req_org1 = DummyRequest(self.org1.id)
+        self.assertEqual(get_tenant_role(self.user_admin1, req_org1), User.Role.ADMIN)
+
+        # Org2 context -> CAREGIVER (from membership)
+        req_org2 = DummyRequest(self.org2.id)
+        self.assertEqual(get_tenant_role(self.user_admin1, req_org2), User.Role.CAREGIVER)
+
+    def test_admin_in_org1_cannot_act_as_admin_in_org2(self):
+        # Authenticate as user_admin1
+        self.client.force_authenticate(user=self.user_admin1)
+
+        # 1. In Org 2, user is a CAREGIVER, so patient creation (admin-only) must return 403 Forbidden
+        resp = self.client.post(
+            "/api/v1/patients/",
+            {
+                "first_name": "New",
+                "last_name": "Patient",
+                "birth_date": "1990-01-01",
+                "gender": "OTHER",
+                "organization": self.org2.id,
+            },
+            HTTP_X_ORGANIZATION_ID=str(self.org2.id),
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        # 2. In Org 2, listing patients should only return assigned patients, NOT unassigned patients
+        resp = self.client.get(
+            "/api/v1/patients/",
+            HTTP_X_ORGANIZATION_ID=str(self.org2.id),
+        )
+        self.assertEqual(resp.status_code, 200)
+        returned_ids = [p["id"] for p in resp.data["results"]]
+        self.assertIn(self.patient_org2_assigned.id, returned_ids)
+        self.assertNotIn(self.patient_org2_unassigned.id, returned_ids)
+
+        # 3. In Org 2, accessing EscalationPolicyViewSet (IsCareAdmin) must return 403 Forbidden
+        resp = self.client.get(
+            "/api/v1/escalation-policies/",
+            HTTP_X_ORGANIZATION_ID=str(self.org2.id),
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        # 4. In Org 2, creating task templates (admin-only) must return 403 Forbidden
+        resp = self.client.post(
+            "/api/v1/task-templates/",
+            {
+                "name": "Morning Check",
+                "title": "Morning Check",
+                "category": "PERSONAL_CARE",
+            },
+            HTTP_X_ORGANIZATION_ID=str(self.org2.id),
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        # 5. In Org 1, user is an ADMIN, so can list escalation policies in Org 1
+        from apps.safety.models import EscalationPolicy
+
+        EscalationPolicy.objects.create(name="Org1 Policy", organization=self.org1)
+        resp_org1 = self.client.get(
+            "/api/v1/escalation-policies/",
+            HTTP_X_ORGANIZATION_ID=str(self.org1.id),
+        )
+        self.assertEqual(resp_org1.status_code, 200)
+
+        # 6. In Org 1, user can see all active Org 1 patients
+        resp_patients = self.client.get(
+            "/api/v1/patients/",
+            HTTP_X_ORGANIZATION_ID=str(self.org1.id),
+        )
+        self.assertEqual(resp_patients.status_code, 200)
+        p_ids = [p["id"] for p in resp_patients.data["results"]]
+        self.assertIn(self.patient_org1.id, p_ids)
+
+    def test_inactive_membership_is_ignored(self):
+        from apps.accounts.context import get_active_organization_id, get_tenant_role
+
+        # Deactivate membership in Org 2
+        self.membership_admin1_in_org2.active = False
+        self.membership_admin1_in_org2.save()
+
+        class DummyRequest:
+            def __init__(self, org_id):
+                self.headers = {"X-Organization-Id": str(org_id)}
+
+        req_org2 = DummyRequest(self.org2.id)
+        # Should not resolve org2 active id or tenant role for deactivated membership
+        self.assertEqual(get_active_organization_id(self.user_admin1, req_org2), self.org1.id)
+        self.assertEqual(get_tenant_role(self.user_admin1, req_org2), User.Role.ADMIN)

@@ -1,11 +1,12 @@
 from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
-from rest_framework import viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.context import get_active_organization_id, get_tenant_role
 from apps.accounts.models import User
 from apps.patients.access import patients_for_user
 from apps.patients.models import CareAssignment
@@ -24,18 +25,21 @@ from .serializers import (
 class ConversationViewSet(viewsets.ModelViewSet):
     serializer_class = ConversationSerializer
     filterset_fields = ["patient", "kind", "active"]
+    search_fields = ["title"]
+    ordering_fields = ["updated_at", "created_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return (
             Conversation.objects.filter(patient_id__in=patient_ids, participants=self.request.user)
             .select_related("patient", "created_by")
-            .prefetch_related("participants", "messages", "messages__sender")
+            .prefetch_related("participants")
+            .distinct()
         )
 
     def perform_create(self, serializer):
         patient = serializer.validated_data["patient"]
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         participants = serializer.validated_data.get("participants", [])
         assigned_ids = set(CareAssignment.objects.filter(patient=patient, active=True).values_list("user_id", flat=True))
@@ -46,8 +50,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         conversation = serializer.instance
+        tenant_role = get_tenant_role(self.request.user, self.request)
         if not (
-            self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN or conversation.created_by == self.request.user
+            self.request.user.is_superuser or tenant_role == User.Role.ADMIN or conversation.created_by == self.request.user
         ):
             raise PermissionDenied("Only the conversation owner or an administrator can change participants.")
         patient = serializer.validated_data.get("patient", conversation.patient)
@@ -58,7 +63,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can archive conversations.")
         instance.active = False
         instance.save(update_fields=["active", "updated_at"])
@@ -172,14 +178,16 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["starts_at", "ends_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         queryset = ShiftAssignment.objects.filter(patient_id__in=patient_ids).select_related("patient", "caregiver")
-        if self.request.user.role == User.Role.CAREGIVER:
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if tenant_role == User.Role.CAREGIVER:
             queryset = queryset.filter(Q(caregiver=self.request.user) | Q(patient__care_assignments__user=self.request.user)).distinct()
         return queryset
 
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators schedule shifts.")
         patient = serializer.validated_data["patient"]
         caregiver = serializer.validated_data["caregiver"]
@@ -188,7 +196,8 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can edit shift assignments.")
         patient = serializer.validated_data.get("patient", serializer.instance.patient)
         caregiver = serializer.validated_data.get("caregiver", serializer.instance.caregiver)
@@ -197,13 +206,15 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can cancel shift assignments.")
         instance.status = ShiftAssignment.Status.CANCELED
         instance.save(update_fields=["status", "updated_at"])
 
     def _transition(self, assignment, new_status, timestamp_field):
-        if assignment.caregiver != self.request.user and not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if assignment.caregiver != self.request.user and not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only the assigned caregiver can update this shift.")
         setattr(assignment, timestamp_field, timezone.now())
         assignment.status = new_status
@@ -232,14 +243,22 @@ class CaregiverAvailabilityViewSet(viewsets.ModelViewSet):
         queryset = CaregiverAvailability.objects.select_related("caregiver", "caregiver__organization")
         if self.request.user.is_superuser:
             return queryset
-        if self.request.user.role == User.Role.ADMIN:
-            return queryset.filter(caregiver__organization_id=self.request.user.organization_id)
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if tenant_role == User.Role.ADMIN and active_org_id:
+            return queryset.filter(caregiver__organization_id=active_org_id)
         return queryset.filter(caregiver=self.request.user)
 
     def perform_create(self, serializer):
         caregiver = serializer.validated_data.get("caregiver", self.request.user)
-        if caregiver != self.request.user and not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        if caregiver != self.request.user and not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can record another caregiver's availability.")
-        if not self.request.user.is_superuser and caregiver.organization_id != self.request.user.organization_id:
-            raise PermissionDenied("Availability must remain inside the organization.")
+        if not self.request.user.is_superuser and active_org_id:
+            caregiver_org_ids = set(caregiver.organization_memberships.filter(active=True).values_list("organization_id", flat=True))
+            if caregiver.organization_id:
+                caregiver_org_ids.add(caregiver.organization_id)
+            if active_org_id not in caregiver_org_ids:
+                raise PermissionDenied("Availability must remain inside the organization.")
         serializer.save(caregiver=caregiver)

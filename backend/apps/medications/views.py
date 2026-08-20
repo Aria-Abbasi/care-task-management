@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.context import get_active_organization_id, get_tenant_role
 from apps.accounts.models import User
 from apps.common.permissions import IsCareAdmin
 from apps.patients.access import patients_for_user
@@ -30,19 +31,21 @@ class MedicationViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "created_at", "stock_quantity"]
 
     def _require_clinician(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR}):
             raise PermissionDenied("A clinician or administrator must change medication orders.")
 
     def _require_care_role(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot administer medication.")
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return Medication.objects.filter(patient_id__in=patient_ids).select_related("patient").prefetch_related("schedules")
 
     def _validate_patient(self, patient):
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
 
     def perform_create(self, serializer):
@@ -147,7 +150,7 @@ class DoseLogViewSet(viewsets.ModelViewSet):
     ordering_fields = ["scheduled_at", "administered_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return (
             DoseLog.objects.filter(medication__patient_id__in=patient_ids)
             .select_related("medication", "medication__patient", "administered_by")
@@ -155,13 +158,14 @@ class DoseLogViewSet(viewsets.ModelViewSet):
         )
 
     def _require_care_role(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot record medication outcomes.")
 
     def perform_create(self, serializer):
         self._require_care_role()
         medication = serializer.validated_data["medication"]
-        if not patients_for_user(self.request.user).filter(pk=medication.patient_id).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=medication.patient_id).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         serializer.save(status=DoseLog.Status.SCHEDULED)
 
@@ -202,7 +206,8 @@ class MedicationInteractionViewSet(viewsets.ModelViewSet):
         queryset = MedicationInteraction.objects.all()
         if self.request.user.is_superuser:
             return queryset
-        return queryset.filter(organization__in=[self.request.user.organization, None])
+        active_org_id = get_active_organization_id(self.request.user, self.request)
+        return queryset.filter(organization_id__in=[active_org_id, None])
 
 
 class RefillRequestViewSet(viewsets.ModelViewSet):
@@ -217,7 +222,7 @@ class RefillRequestViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         medication = serializer.validated_data["medication"]
-        if not patients_for_user(self.request.user).filter(pk=medication.patient_id).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=medication.patient_id).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         refill = serializer.save(requested_by=self.request.user)
         record_audit(
@@ -229,18 +234,21 @@ class RefillRequestViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR}):
             raise PermissionDenied("A clinician or administrator must edit refill workflow records.")
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not (self.request.user.is_superuser or self.request.user.role == User.Role.ADMIN):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN):
             raise PermissionDenied("Only administrators can delete refill workflow records.")
         instance.delete()
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
-        if not (request.user.is_superuser or request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(request.user, request)
+        if not (request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot resolve refill requests.")
         refill = self.get_object()
         refill.status = request.data.get("status", RefillRequest.Status.RECEIVED)
@@ -258,15 +266,16 @@ class StockAdjustmentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["medication"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return StockAdjustment.objects.filter(medication__patient_id__in=patient_ids).select_related("medication", "recorded_by")
 
     @transaction.atomic
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot reconcile medication stock.")
         medication = Medication.objects.select_for_update().get(pk=serializer.validated_data["medication"].pk)
-        if not patients_for_user(self.request.user).filter(pk=medication.patient_id).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=medication.patient_id).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         resulting = (medication.stock_quantity or 0) + serializer.validated_data["quantity_delta"]
         if resulting < 0:

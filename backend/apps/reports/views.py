@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.context import get_tenant_role
 from apps.accounts.models import User
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
@@ -19,7 +20,7 @@ class ShiftReportViewSet(viewsets.ModelViewSet):
     ordering_fields = ["shift_started_at", "shift_ended_at", "created_at"]
 
     def get_queryset(self):
-        patient_ids = patients_for_user(self.request.user).values_list("id", flat=True)
+        patient_ids = patients_for_user(self.request.user, self.request).values_list("id", flat=True)
         return ShiftReport.objects.filter(patient_id__in=patient_ids).select_related("patient", "author", "recipient", "acknowledged_by")
 
     def create(self, request, *args, **kwargs):
@@ -31,10 +32,11 @@ class ShiftReportViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts cannot author clinical shift handovers.")
         patient = serializer.validated_data["patient"]
-        if not patients_for_user(self.request.user).filter(pk=patient.pk).exists():
+        if not patients_for_user(self.request.user, self.request).filter(pk=patient.pk).exists():
             raise PermissionDenied("You are not assigned to this patient.")
         report = serializer.save(author=self.request.user)
         record_audit(

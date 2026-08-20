@@ -5,6 +5,7 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.accounts.models import OrganizationMembership
 from apps.care_tasks.models import Task, TaskOccurrence
 from apps.medications.models import DoseLog
 from apps.patients.models import CareAssignment
@@ -134,7 +135,17 @@ def queue_notification_deliveries(notification, now=None, policy=None):
         ]
     created = 0
     for step in steps:
-        if step.recipient_roles and notification.recipient.role not in step.recipient_roles:
+        recipient_role = None
+        if notification.patient and notification.patient.organization_id:
+            membership = OrganizationMembership.objects.filter(
+                user=notification.recipient, organization_id=notification.patient.organization_id, active=True
+            ).first()
+            if membership:
+                recipient_role = membership.role
+        if not recipient_role:
+            recipient_role = getattr(notification.recipient, "role", None)
+
+        if step.recipient_roles and recipient_role not in step.recipient_roles:
             continue
         enabled = {
             EscalationStep.Channel.PUSH: preference.push_enabled,

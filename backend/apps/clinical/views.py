@@ -3,6 +3,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
+from apps.accounts.context import get_tenant_role
 from apps.accounts.models import User
 from apps.patients.access import patients_for_user
 from apps.safety.services import record_audit
@@ -48,7 +49,7 @@ class PatientScopedViewSet(viewsets.ModelViewSet):
         patient = serializer.validated_data["patient"]
         self._validate_patient(patient)
         extra = {}
-        for field in ["recorded_by", "uploaded_by", "author", "configured_by"]:
+        for field in ["recorded_by", "uploaded_by", "author", "configured_by", "created_by"]:
             if field in [item.name for item in serializer.Meta.model._meta.fields]:
                 extra[field] = self.request.user
         instance = serializer.save(**extra)
@@ -75,7 +76,8 @@ class PatientScopedViewSet(viewsets.ModelViewSet):
 
 class ClinicalWriteRestrictedMixin:
     def _require_clinical_role(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR}):
             raise PermissionDenied("A clinician or administrator must change this record.")
 
     def perform_create(self, serializer):
@@ -93,7 +95,8 @@ class ClinicalWriteRestrictedMixin:
 
 class CareTeamWriteRestrictedMixin:
     def _require_care_team_role(self):
-        if not (self.request.user.is_superuser or self.request.user.role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts can review but cannot alter clinical records.")
 
     def perform_create(self, serializer):
@@ -213,7 +216,8 @@ class FoodIntakeLogViewSet(PatientScopedViewSet):
     def perform_create(self, serializer):
         patient = serializer.validated_data["patient"]
         self._validate_patient(patient)
-        if self.request.user.role == User.Role.FAMILY:
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if tenant_role == User.Role.FAMILY:
             if not getattr(patient.organization, "allow_family_task_completion", False):
                 raise PermissionDenied("Family food intake logging is disabled for this organization.")
         log = serializer.save(recorded_by=self.request.user)
