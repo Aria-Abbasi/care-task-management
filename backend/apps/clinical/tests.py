@@ -124,3 +124,61 @@ class ClinicalMealTrackingTests(APITestCase):
             format="json",
         )
         self.assertEqual(intake_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_food_intake_log_rejects_cross_patient_meal_definition(self):
+        patient2 = Patient.objects.create(
+            first_name="Second",
+            last_name="Patient",
+            birth_date=date(1960, 1, 1),
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(user=self.caregiver, patient=patient2, relationship=CareAssignment.Relationship.PRIMARY_CAREGIVER)
+
+        meal_patient2 = MealDefinition.objects.create(
+            patient=patient2,
+            name="Patient 2 Soup",
+            meal_type=MealDefinition.MealType.LUNCH,
+            created_by=self.caregiver,
+        )
+
+        self.client.force_authenticate(self.caregiver)
+        # Attempt to link patient2's meal definition to patient1's intake log
+        resp = self.client.post(
+            "/api/v1/food-intake-logs/",
+            {
+                "patient": self.patient.id,
+                "meal_definition": meal_patient2.id,
+                "portion_consumed": 50,
+                "recorded_at": timezone.now().isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("meal_definition", resp.data)
+
+    def test_cannot_move_meal_definition_or_log_to_different_patient(self):
+        patient2 = Patient.objects.create(
+            first_name="Second",
+            last_name="Patient",
+            birth_date=date(1960, 1, 1),
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(user=self.caregiver, patient=patient2, relationship=CareAssignment.Relationship.PRIMARY_CAREGIVER)
+
+        meal = MealDefinition.objects.create(
+            patient=self.patient,
+            name="Original Meal",
+            meal_type=MealDefinition.MealType.LUNCH,
+            created_by=self.caregiver,
+        )
+
+        self.client.force_authenticate(self.caregiver)
+        resp = self.client.patch(
+            f"/api/v1/meal-definitions/{meal.id}/",
+            {"patient": patient2.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("patient", resp.data)
+        meal.refresh_from_db()
+        self.assertEqual(meal.patient_id, self.patient.id)

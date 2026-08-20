@@ -17,6 +17,12 @@ from .models import (
 class PatientNamedSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source="patient.full_name", read_only=True)
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance and "patient" in attrs and attrs["patient"] != self.instance.patient:
+            raise serializers.ValidationError({"patient": "Clinical records cannot be moved to another patient."})
+        return attrs
+
 
 class AllergySerializer(PatientNamedSerializer):
     class Meta:
@@ -241,6 +247,8 @@ class MealDefinitionSerializer(PatientNamedSerializer):
 
 class FoodIntakeLogSerializer(PatientNamedSerializer):
     recorded_by_name = serializers.CharField(source="recorded_by.display_name", read_only=True)
+    meal_name = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    meal_type = serializers.ChoiceField(choices=MealDefinition.MealType.choices, required=False)
 
     class Meta:
         model = FoodIntakeLog
@@ -269,12 +277,16 @@ class FoodIntakeLogSerializer(PatientNamedSerializer):
         return value
 
     def validate(self, attrs):
-        meal_name = attrs.get("meal_name", "").strip()
-        meal_def = attrs.get("meal_definition")
+        attrs = super().validate(attrs)
+        patient = attrs.get("patient", getattr(self.instance, "patient", None))
+        meal_def = attrs.get("meal_definition", getattr(self.instance, "meal_definition", None))
+        if patient and meal_def and meal_def.patient_id != patient.id:
+            raise serializers.ValidationError({"meal_definition": "The meal definition must belong to the same patient."})
+        meal_name = attrs.get("meal_name", getattr(self.instance, "meal_name", "")).strip()
         if not meal_name and meal_def:
             attrs["meal_name"] = meal_def.name
             if not attrs.get("meal_type"):
                 attrs["meal_type"] = meal_def.meal_type
-        if not attrs.get("meal_name", "").strip():
+        if not attrs.get("meal_name", getattr(self.instance, "meal_name", "")).strip():
             raise serializers.ValidationError({"meal_name": "Meal name is required."})
         return attrs
