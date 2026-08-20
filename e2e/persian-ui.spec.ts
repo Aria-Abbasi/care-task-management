@@ -68,12 +68,6 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
       await menuBtn.click()
     }
   }
-  const closeSidebarIfMobile = async () => {
-    const closeBtn = page.locator('.mobile-close')
-    if (await closeBtn.isVisible()) {
-      await closeBtn.click()
-    }
-  }
 
   await openSidebarIfMobile()
   await page.locator('.sidebar-profile-more').click()
@@ -81,8 +75,11 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await expect(sidebarAccountMenu.getByText('Sarah James')).toBeVisible()
   await expect(sidebarAccountMenu.getByRole('menuitem', { name: 'Workspace settings' })).toBeVisible()
   await expect(sidebarAccountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible()
-  await page.locator('.sidebar-profile-more').click()
-  await closeSidebarIfMobile()
+  await page.keyboard.press('Escape')
+  await expect(sidebarAccountMenu).toBeHidden()
+  if (await page.locator('.mobile-close').isVisible()) {
+    await page.locator('.mobile-close').click()
+  }
 
   await page.getByRole('button', { name: 'Account' }).click()
   const accountMenu = page.getByRole('menu')
@@ -98,9 +95,11 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await openSidebarIfMobile()
   await page.locator('.sidebar-profile-more').click()
   await expect(sidebarAccountMenu).toBeVisible()
-  await page.mouse.click(500, 120)
+  await page.keyboard.press('Escape')
   await expect(sidebarAccountMenu).toBeHidden()
-  await closeSidebarIfMobile()
+  if (await page.locator('.mobile-close').isVisible()) {
+    await page.locator('.mobile-close').click()
+  }
   await page.screenshot({ path: testInfo.outputPath('english-safety.png'), fullPage: true, animations: 'disabled' })
 })
 
