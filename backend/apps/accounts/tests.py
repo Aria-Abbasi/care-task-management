@@ -569,3 +569,61 @@ class TenantRoleIsolationTests(APITestCase):
         # Should not resolve org2 active id or tenant role for deactivated membership
         self.assertEqual(get_active_organization_id(self.user_admin1, req_org2), self.org1.id)
         self.assertEqual(get_tenant_role(self.user_admin1, req_org2), User.Role.ADMIN)
+
+
+class UserPasswordSecurityTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Haven Core", slug="haven-core")
+        self.user = User.objects.create_user(
+            username="victim_user",
+            email="victim@example.com",
+            password="OriginalPassword123!",
+            role=User.Role.CAREGIVER,
+            organization=self.org,
+        )
+
+    def test_user_cannot_change_password_via_user_patch(self):
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.patch(
+            f"/api/v1/users/{self.user.id}/",
+            {"password": "HackedPassword123!"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("password", resp.data)
+
+        # Verify original password still works
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("OriginalPassword123!"))
+        self.assertFalse(self.user.check_password("HackedPassword123!"))
+
+    def test_password_change_endpoint_requires_valid_current_password(self):
+        self.client.force_authenticate(user=self.user)
+
+        # 1. Invalid current password fails
+        resp_bad = self.client.post(
+            "/api/v1/auth/change-password/",
+            {
+                "current_password": "WrongPassword123!",
+                "new_password": "NewValidPassword123!",
+                "confirm_password": "NewValidPassword123!",
+            },
+            format="json",
+        )
+        self.assertEqual(resp_bad.status_code, 400)
+        self.assertIn("current_password", resp_bad.data)
+
+        # 2. Valid current password succeeds
+        resp_good = self.client.post(
+            "/api/v1/auth/change-password/",
+            {
+                "current_password": "OriginalPassword123!",
+                "new_password": "NewValidPassword123!",
+                "confirm_password": "NewValidPassword123!",
+            },
+            format="json",
+        )
+        self.assertEqual(resp_good.status_code, 204)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("NewValidPassword123!"))

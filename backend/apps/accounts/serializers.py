@@ -114,14 +114,11 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        password = validated_data.pop("password", None)
-        instance = super().update(instance, validated_data)
-        if password:
-            password_validation.validate_password(password, instance)
-            instance.set_password(password)
-            instance.save(update_fields=["password"])
-            instance.session_tokens.filter(revoked_at__isnull=True).update(revoked_at=instance.updated_at)
-        return instance
+        if "password" in validated_data:
+            raise serializers.ValidationError(
+                {"password": "Passwords cannot be updated through this endpoint. Use the change-password endpoint."}
+            )
+        return super().update(instance, validated_data)
 
 
 class LoginSerializer(serializers.Serializer):
