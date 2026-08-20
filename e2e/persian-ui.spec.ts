@@ -61,12 +61,29 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: 'Safety & sync log' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export signed audit report' })).toBeVisible()
   await expect(page.getByRole('group', { name: 'Safety log filters' })).toBeVisible()
+
+  const openSidebarIfMobile = async () => {
+    const menuBtn = page.locator('.menu-button')
+    if (await menuBtn.isVisible()) {
+      await menuBtn.click()
+    }
+  }
+  const closeSidebarIfMobile = async () => {
+    const closeBtn = page.locator('.mobile-close')
+    if (await closeBtn.isVisible()) {
+      await closeBtn.click()
+    }
+  }
+
+  await openSidebarIfMobile()
   await page.locator('.sidebar-profile-more').click()
   const sidebarAccountMenu = page.locator('.sidebar-account-menu')
   await expect(sidebarAccountMenu.getByText('Sarah James')).toBeVisible()
   await expect(sidebarAccountMenu.getByRole('menuitem', { name: 'Workspace settings' })).toBeVisible()
   await expect(sidebarAccountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible()
   await page.locator('.sidebar-profile-more').click()
+  await closeSidebarIfMobile()
+
   await page.getByRole('button', { name: 'Account' }).click()
   const accountMenu = page.getByRole('menu')
   await expect(accountMenu.getByText('Sarah James')).toBeVisible()
@@ -77,6 +94,8 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await page.keyboard.press('Escape')
   await expect(accountMenu).toBeHidden()
   await expect(page.getByRole('button', { name: 'Account' })).toBeFocused()
+
+  await openSidebarIfMobile()
   await page.locator('.sidebar-profile-more').click()
   await expect(sidebarAccountMenu).toBeVisible()
   await page.locator('#main-content').click({ position: { x: 300, y: 120 } })
