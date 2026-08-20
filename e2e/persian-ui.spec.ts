@@ -98,7 +98,12 @@ test('safety-log header is usable in English', async ({ page }, testInfo) => {
   await openSidebarIfMobile()
   await page.locator('.sidebar-profile-more').click()
   await expect(sidebarAccountMenu).toBeVisible()
-  await page.locator('#main-content').click({ position: { x: 300, y: 120 } })
+  const backdrop = page.locator('.backdrop')
+  if (await backdrop.isVisible()) {
+    await backdrop.click({ position: { x: 10, y: 10 } })
+  } else {
+    await page.locator('#main-content').click({ position: { x: 300, y: 120 } })
+  }
   await expect(sidebarAccountMenu).toBeHidden()
   await page.screenshot({ path: testInfo.outputPath('english-safety.png'), fullPage: true, animations: 'disabled' })
 })
