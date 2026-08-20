@@ -1,7 +1,7 @@
 # Haven security architecture and threat model
 
-Audit date: 2026-08-09  
-Target: `/home/Aria/Documents/Care task managment`  
+Audit date: 2026-08-09
+Target: `/home/Aria/Documents/Care task managment`
 Method: source-assisted, read-only security review with controlled local validation
 
 ## System purpose and sensitivity
