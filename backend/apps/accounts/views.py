@@ -7,6 +7,7 @@ import qrcode
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import timezone
@@ -161,9 +162,7 @@ class MfaViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["post"])
     def setup(self, request):
         secret = generate_totp_secret()
-        request.user.mfa_secret = secret
-        request.user.mfa_enabled = False
-        request.user.save(update_fields=["mfa_secret", "mfa_enabled"])
+        cache.set(f"pending_mfa_secret_{request.user.id}", secret, timeout=600)
         uri = totp_uri(secret, request.user.email or request.user.username)
         image = qrcode.make(uri)
         buffer = BytesIO()
@@ -174,11 +173,16 @@ class MfaViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=["post"])
     def confirm(self, request):
-        if not verify_totp(request.user.mfa_secret, request.data.get("code")):
+        code = request.data.get("code")
+        pending_secret = cache.get(f"pending_mfa_secret_{request.user.id}")
+        secret_to_verify = pending_secret or (request.user.mfa_secret if not request.user.mfa_enabled else None)
+        if not secret_to_verify or not verify_totp(secret_to_verify, code):
             return Response({"code": "Invalid or expired verification code."}, status=status.HTTP_400_BAD_REQUEST)
+        request.user.mfa_secret = secret_to_verify
         request.user.mfa_enabled = True
         request.user.mfa_confirmed_at = timezone.now()
-        request.user.save(update_fields=["mfa_enabled", "mfa_confirmed_at"])
+        request.user.save(update_fields=["mfa_secret", "mfa_enabled", "mfa_confirmed_at"])
+        cache.delete(f"pending_mfa_secret_{request.user.id}")
         return Response({"enabled": True})
 
     @action(detail=False, methods=["post"])
@@ -189,6 +193,7 @@ class MfaViewSet(viewsets.ViewSet):
         request.user.mfa_secret = ""
         request.user.mfa_confirmed_at = None
         request.user.save(update_fields=["mfa_enabled", "mfa_secret", "mfa_confirmed_at"])
+        cache.delete(f"pending_mfa_secret_{request.user.id}")
         return Response({"enabled": False})
 
 

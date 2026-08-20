@@ -627,3 +627,63 @@ class UserPasswordSecurityTests(APITestCase):
 
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("NewValidPassword123!"))
+
+
+class MfaStatePreservationTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="MFA Org", slug="mfa-org")
+        self.user = User.objects.create_user(
+            username="mfa_user",
+            email="mfa_user@example.com",
+            password="StrongPassword123!",
+            role=User.Role.CAREGIVER,
+            organization=self.org,
+        )
+
+    def test_mfa_setup_does_not_disable_active_mfa_until_confirmed(self):
+        self.client.force_authenticate(user=self.user)
+
+        # 1. Enable MFA initially
+        setup_resp = self.client.post("/api/v1/mfa/setup/", {}, format="json")
+        self.assertEqual(setup_resp.status_code, 200)
+        initial_secret = setup_resp.data["secret"]
+        code1 = totp_code(initial_secret)
+        confirm_resp = self.client.post("/api/v1/mfa/confirm/", {"code": code1}, format="json")
+        self.assertEqual(confirm_resp.status_code, 200)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled)
+        self.assertEqual(self.user.mfa_secret, initial_secret)
+
+        # 2. Trigger new setup (e.g. user reconfigures or attacker calls setup)
+        setup2_resp = self.client.post("/api/v1/mfa/setup/", {}, format="json")
+        self.assertEqual(setup2_resp.status_code, 200)
+        new_secret = setup2_resp.data["secret"]
+        self.assertNotEqual(initial_secret, new_secret)
+
+        # 3. Verify user's MFA is STILL active and secret has NOT been prematurely overwritten
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled, "MFA should remain enabled until new secret is confirmed")
+        self.assertEqual(self.user.mfa_secret, initial_secret, "Old secret must remain intact")
+
+        # 4. Old secret TOTP code still verifies on login
+        self.client.force_authenticate(user=None)
+        login_resp = self.client.post(
+            "/api/v1/auth/login/",
+            {
+                "login": self.user.email,
+                "password": "StrongPassword123!",
+                "mfa_code": totp_code(initial_secret),
+            },
+            format="json",
+        )
+        self.assertEqual(login_resp.status_code, 200)
+
+        # 5. Confirm new secret -> MFA secret is now updated
+        self.client.force_authenticate(user=self.user)
+        confirm2_resp = self.client.post("/api/v1/mfa/confirm/", {"code": totp_code(new_secret)}, format="json")
+        self.assertEqual(confirm2_resp.status_code, 200)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.mfa_enabled)
+        self.assertEqual(self.user.mfa_secret, new_secret)
