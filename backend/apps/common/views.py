@@ -58,7 +58,7 @@ class MetricsView(APIView):
         from apps.safety.models import CareNotification, NotificationDelivery, WorkerHeartbeat
 
         expected = os.getenv("HAVEN_METRICS_TOKEN", "")
-        if expected and request.headers.get("Authorization") != f"Bearer {expected}":
+        if not expected or request.headers.get("Authorization") != f"Bearer {expected}":
             return Response(status=status.HTTP_403_FORBIDDEN)
         lines = [
             "# HELP haven_notifications_active Active unacknowledged care notifications",
