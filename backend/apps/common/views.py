@@ -56,9 +56,9 @@ class MetricsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        from apps.safety.models import CareNotification, NotificationDelivery, WorkerHeartbeat
-
         import secrets
+
+        from apps.safety.models import CareNotification, NotificationDelivery, WorkerHeartbeat
 
         expected = os.getenv("HAVEN_METRICS_TOKEN", "")
         auth_header = request.headers.get("Authorization", "")

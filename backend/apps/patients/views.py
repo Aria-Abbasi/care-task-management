@@ -16,7 +16,6 @@ from apps.common.permissions import IsCareAdmin
 from apps.common.timezones import patient_timezone
 from apps.communications.models import CaregiverAvailability, ShiftAssignment
 from apps.communications.serializers import CaregiverAvailabilitySerializer, ShiftAssignmentSerializer
-from apps.health.models import VitalRecord
 from apps.health.serializers import VitalRecordSerializer
 from apps.medications.models import DoseLog, Medication
 from apps.medications.serializers import DoseLogSerializer, MedicationSerializer

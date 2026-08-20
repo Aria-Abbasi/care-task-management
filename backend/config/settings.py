@@ -176,11 +176,7 @@ HAVEN_VAPID_PUBLIC_KEY = os.getenv("HAVEN_VAPID_PUBLIC_KEY", "")
 HAVEN_DELIVERY_WEBHOOK_SECRET = os.getenv("HAVEN_DELIVERY_WEBHOOK_SECRET", "local-delivery-secret" if DEBUG else "")
 if not DEBUG and len(HAVEN_DELIVERY_WEBHOOK_SECRET) < 24:
     raise RuntimeError("HAVEN_DELIVERY_WEBHOOK_SECRET must be at least 24 characters in production")
-HAVEN_TRUSTED_PROXIES = [
-    ip.strip()
-    for ip in os.getenv("HAVEN_TRUSTED_PROXIES", "127.0.0.1,::1").split(",")
-    if ip.strip()
-]
+HAVEN_TRUSTED_PROXIES = [ip.strip() for ip in os.getenv("HAVEN_TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if ip.strip()]
 HAVEN_LOGIN_MAX_FAILURES = int(os.getenv("HAVEN_LOGIN_MAX_FAILURES", "5"))
 HAVEN_LOGIN_WINDOW_MINUTES = int(os.getenv("HAVEN_LOGIN_WINDOW_MINUTES", "15"))
 DEFAULT_FROM_EMAIL = os.getenv("HAVEN_FROM_EMAIL", "security@haven.local")

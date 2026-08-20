@@ -777,9 +777,7 @@ class CareApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["status"], TaskOccurrence.Status.DONE)
         self.assertEqual(response.data["task_detail"]["title"], "Hydration Cup")
-        self.assertTrue(
-            AuditEvent.objects.filter(action="TASK_ON_DEMAND_LOGGED", patient=self.patient).exists()
-        )
+        self.assertTrue(AuditEvent.objects.filter(action="TASK_ON_DEMAND_LOGGED", patient=self.patient).exists())
 
     def test_ad_hoc_task_creation_by_caregiver(self):
         self.authenticate()
@@ -799,9 +797,7 @@ class CareApiTests(APITestCase):
         self.assertEqual(response.data["task_detail"]["title"], "Emergency ice pack applied")
         created_task = Task.objects.get(title="Emergency ice pack applied")
         self.assertEqual(created_task.schedule_type, Task.ScheduleType.ON_DEMAND)
-        self.assertTrue(
-            AuditEvent.objects.filter(action="TASK_AD_HOC_CREATED", patient=self.patient).exists()
-        )
+        self.assertTrue(AuditEvent.objects.filter(action="TASK_AD_HOC_CREATED", patient=self.patient).exists())
 
     def test_family_task_completion_toggle_enforcement(self):
         family_user = User.objects.create_user(
@@ -915,6 +911,7 @@ class CareApiTests(APITestCase):
 
     def test_suggested_quick_actions_ranking_by_time_window(self):
         from datetime import datetime as dt
+
         from apps.common.timezones import patient_timezone
 
         self.authenticate()
@@ -998,5 +995,3 @@ class CareApiTests(APITestCase):
         self.assertEqual(resp_patient_action.status_code, status.HTTP_200_OK)
         self.assertEqual(resp_patient_action.data["time_window"], "MORNING")
         self.assertIn("suggestions", resp_patient_action.data)
-
-

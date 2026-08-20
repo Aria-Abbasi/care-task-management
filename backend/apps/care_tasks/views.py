@@ -21,7 +21,6 @@ from .serializers import (
     CompleteOccurrenceSerializer,
     CorrectOccurrenceSerializer,
     DelayOccurrenceSerializer,
-    SkipOccurrenceSerializer,
     TaskOccurrenceSerializer,
     TaskSerializer,
 )
@@ -221,7 +220,9 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             TaskOccurrence.objects.filter(task__patient_id__in=self.allowed_patient_ids())
-            .select_related("task", "task__patient", "task__assigned_to", "completed_by", "schedule", "completion", "completion__completed_by")
+            .select_related(
+                "task", "task__patient", "task__assigned_to", "completed_by", "schedule", "completion", "completion__completed_by"
+            )
             .prefetch_related("task__schedules", "corrections", "corrections__corrected_by")
         )
         start = self.request.query_params.get("start")

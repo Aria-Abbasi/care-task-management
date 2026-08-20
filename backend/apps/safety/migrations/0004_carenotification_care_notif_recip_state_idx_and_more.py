@@ -5,24 +5,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('patients', '0003_patient_organization_required'),
-        ('safety', '0003_dose_timing_exception_kind'),
+        ("patients", "0003_patient_organization_required"),
+        ("safety", "0003_dose_timing_exception_kind"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='carenotification',
-            index=models.Index(fields=['recipient', 'state'], name='care_notif_recip_state_idx'),
+            model_name="carenotification",
+            index=models.Index(fields=["recipient", "state"], name="care_notif_recip_state_idx"),
         ),
         migrations.AddIndex(
-            model_name='carenotification',
-            index=models.Index(fields=['source_type', 'source_id'], name='care_notif_source_idx'),
+            model_name="carenotification",
+            index=models.Index(fields=["source_type", "source_id"], name="care_notif_source_idx"),
         ),
         migrations.AddIndex(
-            model_name='notificationdelivery',
-            index=models.Index(fields=['status', 'next_attempt_at'], name='notif_deliv_status_next_idx'),
+            model_name="notificationdelivery",
+            index=models.Index(fields=["status", "next_attempt_at"], name="notif_deliv_status_next_idx"),
         ),
     ]

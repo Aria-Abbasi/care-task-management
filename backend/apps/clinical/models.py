@@ -181,9 +181,7 @@ class MealDefinition(TimeStampedModel):
 
 class FoodIntakeLog(TimeStampedModel):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="food_intake_logs")
-    meal_definition = models.ForeignKey(
-        MealDefinition, on_delete=models.SET_NULL, null=True, blank=True, related_name="intake_logs"
-    )
+    meal_definition = models.ForeignKey(MealDefinition, on_delete=models.SET_NULL, null=True, blank=True, related_name="intake_logs")
     meal_type = models.CharField(max_length=24, choices=MealDefinition.MealType.choices, default=MealDefinition.MealType.LUNCH)
     meal_name = models.CharField(max_length=160)
     portion_consumed = models.PositiveSmallIntegerField(

@@ -3,7 +3,7 @@ from datetime import date
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import Organization, OrganizationMembership, User
+from apps.accounts.models import Organization, User
 from apps.patients.models import CareAssignment, Patient
 
 

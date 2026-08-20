@@ -1,5 +1,6 @@
 import ipaddress
 import logging
+
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def is_ip_in_trusted_proxies(ip_str):
         parsed = _parse_ip_or_network(entry)
         if parsed is None:
             continue
-        if isinstance(parsed, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+        if isinstance(parsed, ipaddress.IPv4Network | ipaddress.IPv6Network):
             if target_ip in parsed:
                 return True
         elif target_ip == parsed:

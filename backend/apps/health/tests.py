@@ -1,12 +1,13 @@
 from datetime import date
 from decimal import Decimal
+
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Organization, User
+from apps.health.models import CustomVitalType
 from apps.patients.models import CareAssignment, Patient
-from apps.health.models import CustomVitalType, VitalRecord
 
 
 class CustomVitalTypeTests(APITestCase):

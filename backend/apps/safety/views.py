@@ -11,7 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.context import get_active_organization_id, get_tenant_role
+from apps.accounts.context import get_active_organization_id
 from apps.common.permissions import IsCareAdmin
 from apps.patients.access import patients_for_user
 

@@ -6,37 +6,50 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0002_loginattempt_organization_user_mfa_confirmed_at_and_more'),
+        ("accounts", "0002_loginattempt_organization_user_mfa_confirmed_at_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='organization',
-            name='allow_family_task_completion',
-            field=models.BooleanField(default=False, help_text='When true, assigned family members can mark routine tasks complete and log food intake.'),
+            model_name="organization",
+            name="allow_family_task_completion",
+            field=models.BooleanField(
+                default=False, help_text="When true, assigned family members can mark routine tasks complete and log food intake."
+            ),
         ),
         migrations.CreateModel(
-            name='OrganizationMembership',
+            name="OrganizationMembership",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('role', models.CharField(default='CAREGIVER', max_length=16)),
-                ('is_default', models.BooleanField(default=False)),
-                ('active', models.BooleanField(default=True)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='user_memberships', to='accounts.organization')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='organization_memberships', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("role", models.CharField(default="CAREGIVER", max_length=16)),
+                ("is_default", models.BooleanField(default=False)),
+                ("active", models.BooleanField(default=True)),
+                (
+                    "organization",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, related_name="user_memberships", to="accounts.organization"
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, related_name="organization_memberships", to=settings.AUTH_USER_MODEL
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-is_default', 'organization__name'],
-                'unique_together': {('user', 'organization')},
+                "ordering": ["-is_default", "organization__name"],
+                "unique_together": {("user", "organization")},
             },
         ),
         migrations.AddField(
-            model_name='user',
-            name='organizations',
-            field=models.ManyToManyField(blank=True, related_name='members', through='accounts.OrganizationMembership', to='accounts.organization'),
+            model_name="user",
+            name="organizations",
+            field=models.ManyToManyField(
+                blank=True, related_name="members", through="accounts.OrganizationMembership", to="accounts.organization"
+            ),
         ),
     ]

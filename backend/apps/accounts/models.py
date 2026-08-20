@@ -17,8 +17,7 @@ class Organization(TimeStampedModel):
     timezone = models.CharField(max_length=64, default="UTC")
     active = models.BooleanField(default=True)
     allow_family_task_completion = models.BooleanField(
-        default=False,
-        help_text="When true, assigned family members can mark routine tasks complete and log food intake."
+        default=False, help_text="When true, assigned family members can mark routine tasks complete and log food intake."
     )
 
     def __str__(self):

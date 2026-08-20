@@ -19,9 +19,7 @@ def patients_for_user(user, request=None):
     if active_org_id:
         queryset = queryset.filter(organization_id=active_org_id)
     else:
-        user_org_ids = list(
-            OrganizationMembership.objects.filter(user=user, active=True).values_list("organization_id", flat=True)
-        )
+        user_org_ids = list(OrganizationMembership.objects.filter(user=user, active=True).values_list("organization_id", flat=True))
         if user.organization_id and user.organization_id not in user_org_ids:
             user_org_ids.append(user.organization_id)
         if user_org_ids:

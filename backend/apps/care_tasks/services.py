@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from apps.common.timezones import patient_timezone
 
-from .models import CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import Task, TaskOccurrence, TaskSchedule
 
 
 def get_care_time_window(hour: int) -> str:
@@ -24,15 +24,23 @@ def infer_action_icon(title: str, category: str) -> str:
     title_lower = title.lower()
     if any(k in title_lower for k in ["water", "hydrat", "fluid", "drink", "آب", "مایعات", "نوشید"]):
         return "droplets"
-    if any(k in title_lower for k in ["turn", "reposition", "posture", "mobility", "walk", "حرکت", "وضعیت", "جابجا", "چرخش", "راه رفتن", "پهلوی"]):
+    if any(
+        k in title_lower
+        for k in ["turn", "reposition", "posture", "mobility", "walk", "حرکت", "وضعیت", "جابجا", "چرخش", "راه رفتن", "پهلوی"]
+    ):
         return "heart-pulse"
-    if any(k in title_lower for k in ["hygiene", "wash", "bath", "clean", "mouth", "teeth", "شستشو", "نظافت", "حمام", "بهداشت", "مسواک", "صورت"]):
+    if any(
+        k in title_lower
+        for k in ["hygiene", "wash", "bath", "clean", "mouth", "teeth", "شستشو", "نظافت", "حمام", "بهداشت", "مسواک", "صورت"]
+    ):
         return "sparkles"
     if any(k in title_lower for k in ["toilet", "bathroom", "restroom", "wc", "سرویس", "دستشویی", "توالت"]):
         return "user-round"
     if any(k in title_lower for k in ["med", "pill", "drug", "دارو", "قرص"]):
         return "pill"
-    if any(k in title_lower for k in ["meal", "food", "snack", "breakfast", "lunch", "dinner", "غذا", "میان‌وعده", "صبحانه", "ناهار", "شام"]):
+    if any(
+        k in title_lower for k in ["meal", "food", "snack", "breakfast", "lunch", "dinner", "غذا", "میان‌وعده", "صبحانه", "ناهار", "شام"]
+    ):
         return "utensils"
     if category == Task.Category.PERSONAL_CARE:
         return "user-round"
@@ -215,7 +223,9 @@ def get_suggested_quick_actions(patient, current_time=None, target_hour=None, da
         in_window = get_care_time_window(occ_hour) == active_window
 
         if title_key not in task_stats:
-            default_note = (occ.completion.note if hasattr(occ, "completion") and occ.completion and occ.completion.note else task.instructions)
+            default_note = (
+                occ.completion.note if hasattr(occ, "completion") and occ.completion and occ.completion.note else task.instructions
+            )
             task_stats[title_key] = {
                 "id": task.id if task.schedule_type == Task.ScheduleType.ON_DEMAND else None,
                 "title": task.title,
@@ -355,4 +365,3 @@ def mark_overdue_occurrences(grace_minutes=30):
     if not overdue_ids:
         return 0
     return TaskOccurrence.objects.filter(id__in=overdue_ids).update(status=TaskOccurrence.Status.MISSED)
-

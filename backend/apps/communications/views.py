@@ -1,7 +1,7 @@
 from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
-from rest_framework import permissions, status, viewsets
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -51,9 +51,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         conversation = serializer.instance
         tenant_role = get_tenant_role(self.request.user, self.request)
-        if not (
-            self.request.user.is_superuser or tenant_role == User.Role.ADMIN or conversation.created_by == self.request.user
-        ):
+        if not (self.request.user.is_superuser or tenant_role == User.Role.ADMIN or conversation.created_by == self.request.user):
             raise PermissionDenied("Only the conversation owner or an administrator can change participants.")
         patient = serializer.validated_data.get("patient", conversation.patient)
         participants = serializer.validated_data.get("participants", conversation.participants.all())

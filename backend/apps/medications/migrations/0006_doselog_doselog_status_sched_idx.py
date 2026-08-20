@@ -5,15 +5,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('medications', '0005_medication_timing_policy_and_doselog_window'),
+        ("medications", "0005_medication_timing_policy_and_doselog_window"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='doselog',
-            index=models.Index(fields=['status', 'scheduled_at'], name='doselog_status_sched_idx'),
+            model_name="doselog",
+            index=models.Index(fields=["status", "scheduled_at"], name="doselog_status_sched_idx"),
         ),
     ]

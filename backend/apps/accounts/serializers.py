@@ -57,7 +57,9 @@ class UserSerializer(serializers.ModelSerializer):
     def get_organizations(self, obj):
         if obj.is_superuser:
             return list(
-                Organization.objects.filter(active=True).values("id", "name", "slug", "country_code", "timezone", "allow_family_task_completion")
+                Organization.objects.filter(active=True).values(
+                    "id", "name", "slug", "country_code", "timezone", "allow_family_task_completion"
+                )
             )
         orgs = {}
         if obj.organization and obj.organization.active:

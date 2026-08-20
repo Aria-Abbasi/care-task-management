@@ -5,15 +5,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('care_tasks', '0005_caretasktemplate_completion_requirements'),
+        ("care_tasks", "0005_caretasktemplate_completion_requirements"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='taskoccurrence',
-            index=models.Index(fields=['status', 'scheduled_at'], name='task_occ_status_sched_idx'),
+            model_name="taskoccurrence",
+            index=models.Index(fields=["status", "scheduled_at"], name="task_occ_status_sched_idx"),
         ),
     ]

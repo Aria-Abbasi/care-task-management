@@ -250,7 +250,9 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         org_users = User.objects.filter(Q(organization=instance) | Q(organization_memberships__organization=instance)).distinct()
         for u in org_users:
             has_other_primary = bool(u.organization and u.organization.active and u.organization_id != instance.id)
-            has_other_membership = u.organization_memberships.filter(active=True, organization__active=True).exclude(organization=instance).exists()
+            has_other_membership = (
+                u.organization_memberships.filter(active=True, organization__active=True).exclude(organization=instance).exists()
+            )
             if not has_other_primary and not has_other_membership and not u.is_superuser:
                 u.session_tokens.filter(revoked_at__isnull=True).update(revoked_at=timezone.now())
 

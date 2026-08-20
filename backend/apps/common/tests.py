@@ -2,8 +2,8 @@ import os
 from unittest.mock import patch
 
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
+from rest_framework.test import APIClient
 
 
 class MetricsViewSecurityTests(TestCase):
@@ -34,8 +34,9 @@ class MetricsViewSecurityTests(TestCase):
 
 class ClientIpExtractionTests(TestCase):
     def test_untrusted_direct_client_ignores_x_forwarded_for(self):
-        from apps.common.ip import get_client_ip
         from django.test import RequestFactory
+
+        from apps.common.ip import get_client_ip
 
         rf = RequestFactory()
         # Direct untrusted client connecting from 198.51.100.5 attempting to spoof 203.0.113.1
@@ -45,8 +46,9 @@ class ClientIpExtractionTests(TestCase):
             self.assertEqual(ip, "198.51.100.5")
 
     def test_trusted_proxy_resolves_client_ip_from_chain(self):
-        from apps.common.ip import get_client_ip
         from django.test import RequestFactory
+
+        from apps.common.ip import get_client_ip
 
         rf = RequestFactory()
         # Connection from trusted internal proxy 10.0.1.20 with forwarded client chain
@@ -60,8 +62,9 @@ class ClientIpExtractionTests(TestCase):
             self.assertEqual(ip, "203.0.113.50")
 
     def test_trusted_proxy_single_client_ip(self):
-        from apps.common.ip import get_client_ip
         from django.test import RequestFactory
+
+        from apps.common.ip import get_client_ip
 
         rf = RequestFactory()
         request = rf.get(

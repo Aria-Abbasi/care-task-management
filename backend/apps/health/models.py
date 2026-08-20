@@ -14,9 +14,7 @@ class CustomVitalType(TimeStampedModel):
     organization = models.ForeignKey(
         "accounts.Organization", on_delete=models.CASCADE, null=True, blank=True, related_name="custom_vital_types"
     )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="custom_vital_types"
-    )
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="custom_vital_types")
     active = models.BooleanField(default=True)
 
     class Meta:

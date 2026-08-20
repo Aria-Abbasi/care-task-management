@@ -6,53 +6,106 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('clinical', '0001_initial'),
-        ('patients', '0003_patient_organization_required'),
+        ("clinical", "0001_initial"),
+        ("patients", "0003_patient_organization_required"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='MealDefinition',
+            name="MealDefinition",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('name', models.CharField(max_length=160)),
-                ('meal_type', models.CharField(choices=[('BREAKFAST', 'Breakfast'), ('LUNCH', 'Lunch'), ('DINNER', 'Dinner'), ('SNACK', 'Snack'), ('HYDRATION', 'Hydration')], default='LUNCH', max_length=24)),
-                ('instructions', models.TextField(blank=True, help_text='Recipe and cooking instructions, dietary restrictions')),
-                ('ingredients', models.JSONField(blank=True, default=list)),
-                ('dietary_tags', models.JSONField(blank=True, default=list)),
-                ('target_time', models.TimeField(blank=True, null=True)),
-                ('active', models.BooleanField(default=True)),
-                ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_meals', to=settings.AUTH_USER_MODEL)),
-                ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='meal_definitions', to='patients.patient')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("name", models.CharField(max_length=160)),
+                (
+                    "meal_type",
+                    models.CharField(
+                        choices=[
+                            ("BREAKFAST", "Breakfast"),
+                            ("LUNCH", "Lunch"),
+                            ("DINNER", "Dinner"),
+                            ("SNACK", "Snack"),
+                            ("HYDRATION", "Hydration"),
+                        ],
+                        default="LUNCH",
+                        max_length=24,
+                    ),
+                ),
+                ("instructions", models.TextField(blank=True, help_text="Recipe and cooking instructions, dietary restrictions")),
+                ("ingredients", models.JSONField(blank=True, default=list)),
+                ("dietary_tags", models.JSONField(blank=True, default=list)),
+                ("target_time", models.TimeField(blank=True, null=True)),
+                ("active", models.BooleanField(default=True)),
+                (
+                    "created_by",
+                    models.ForeignKey(
+                        null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="created_meals", to=settings.AUTH_USER_MODEL
+                    ),
+                ),
+                (
+                    "patient",
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="meal_definitions", to="patients.patient"),
+                ),
             ],
             options={
-                'ordering': ['target_time', 'name'],
+                "ordering": ["target_time", "name"],
             },
         ),
         migrations.CreateModel(
-            name='FoodIntakeLog',
+            name="FoodIntakeLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('meal_type', models.CharField(choices=[('BREAKFAST', 'Breakfast'), ('LUNCH', 'Lunch'), ('DINNER', 'Dinner'), ('SNACK', 'Snack'), ('HYDRATION', 'Hydration')], default='LUNCH', max_length=24)),
-                ('meal_name', models.CharField(max_length=160)),
-                ('portion_consumed', models.PositiveSmallIntegerField(default=100, help_text='Percentage consumed (0-100%)')),
-                ('recorded_at', models.DateTimeField(db_index=True)),
-                ('notes', models.TextField(blank=True)),
-                ('client_reference', models.UUIDField(blank=True, null=True, unique=True)),
-                ('provenance', models.JSONField(blank=True, default=dict)),
-                ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='food_intake_logs', to='patients.patient')),
-                ('recorded_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='recorded_intakes', to=settings.AUTH_USER_MODEL)),
-                ('meal_definition', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='intake_logs', to='clinical.mealdefinition')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "meal_type",
+                    models.CharField(
+                        choices=[
+                            ("BREAKFAST", "Breakfast"),
+                            ("LUNCH", "Lunch"),
+                            ("DINNER", "Dinner"),
+                            ("SNACK", "Snack"),
+                            ("HYDRATION", "Hydration"),
+                        ],
+                        default="LUNCH",
+                        max_length=24,
+                    ),
+                ),
+                ("meal_name", models.CharField(max_length=160)),
+                ("portion_consumed", models.PositiveSmallIntegerField(default=100, help_text="Percentage consumed (0-100%)")),
+                ("recorded_at", models.DateTimeField(db_index=True)),
+                ("notes", models.TextField(blank=True)),
+                ("client_reference", models.UUIDField(blank=True, null=True, unique=True)),
+                ("provenance", models.JSONField(blank=True, default=dict)),
+                (
+                    "patient",
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="food_intake_logs", to="patients.patient"),
+                ),
+                (
+                    "recorded_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="recorded_intakes",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "meal_definition",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="intake_logs",
+                        to="clinical.mealdefinition",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-recorded_at'],
+                "ordering": ["-recorded_at"],
             },
         ),
     ]
