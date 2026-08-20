@@ -38,6 +38,8 @@ class ShiftReportSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "author", "sent_at", "acknowledged_by", "acknowledged_at", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        if self.instance and "patient" in attrs and attrs["patient"] != self.instance.patient:
+            raise serializers.ValidationError({"patient": "Shift reports cannot be moved to another patient."})
         start = attrs.get("shift_started_at", getattr(self.instance, "shift_started_at", None))
         end = attrs.get("shift_ended_at", getattr(self.instance, "shift_ended_at", None))
         if start and end and end <= start:
