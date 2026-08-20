@@ -333,3 +333,77 @@ class ProductionFeatureTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["resourceType"], "Bundle")
         self.assertEqual(response.data["entry"][0]["resource"]["resourceType"], "Observation")
+
+
+class LoginThrottlingSecurityTests(APITestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name="Test Org", slug="test-org")
+        self.user1 = User.objects.create_user(
+            username="user1",
+            email="user1@example.com",
+            password="ValidPassword123!",
+            organization=self.organization,
+        )
+        self.user2 = User.objects.create_user(
+            username="user2",
+            email="user2@example.com",
+            password="ValidPassword123!",
+            organization=self.organization,
+        )
+
+    def test_login_rate_limiting_keys_on_client_ip_and_does_not_lock_out_other_proxy_users(self):
+        # Requests come via trusted proxy 127.0.0.1 with distinct X-Forwarded-For headers
+        with self.settings(HAVEN_TRUSTED_PROXIES=["127.0.0.1"]):
+            # Attacker from 203.0.113.100 fails 25 times on various dummy accounts
+            for i in range(25):
+                resp = self.client.post(
+                    "/api/v1/auth/login/",
+                    {"login": f"baduser_{i}@example.com", "password": "WrongPassword!"},
+                    REMOTE_ADDR="127.0.0.1",
+                    HTTP_X_FORWARDED_FOR="203.0.113.100",
+                    format="json",
+                )
+                self.assertEqual(resp.status_code, 400)
+
+            # Attacker's IP 203.0.113.100 is now throttled
+            attacker_resp = self.client.post(
+                "/api/v1/auth/login/",
+                {"login": self.user1.email, "password": "ValidPassword123!"},
+                REMOTE_ADDR="127.0.0.1",
+                HTTP_X_FORWARDED_FOR="203.0.113.100",
+                format="json",
+            )
+            self.assertEqual(attacker_resp.status_code, 429)
+
+            # Legitimate user from different IP 198.51.100.20 via the same proxy is NOT locked out
+            legit_resp = self.client.post(
+                "/api/v1/auth/login/",
+                {"login": self.user1.email, "password": "ValidPassword123!"},
+                REMOTE_ADDR="127.0.0.1",
+                HTTP_X_FORWARDED_FOR="198.51.100.20",
+                format="json",
+            )
+            self.assertEqual(legit_resp.status_code, 200)
+            self.assertIn("token", legit_resp.data)
+
+    def test_untrusted_direct_connection_spoofed_header_ignored(self):
+        # Attacker connects directly from 198.51.100.5 (not in trusted proxies) trying to spoof different IPs
+        with self.settings(HAVEN_TRUSTED_PROXIES=["127.0.0.1"]):
+            for i in range(25):
+                self.client.post(
+                    "/api/v1/auth/login/",
+                    {"login": f"baduser_{i}@example.com", "password": "WrongPassword!"},
+                    REMOTE_ADDR="198.51.100.5",
+                    HTTP_X_FORWARDED_FOR=f"10.0.0.{i}",
+                    format="json",
+                )
+
+            # The actual REMOTE_ADDR 198.51.100.5 is throttled despite spoofed headers
+            resp = self.client.post(
+                "/api/v1/auth/login/",
+                {"login": self.user2.email, "password": "ValidPassword123!"},
+                REMOTE_ADDR="198.51.100.5",
+                HTTP_X_FORWARDED_FOR="10.0.0.99",
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 429)

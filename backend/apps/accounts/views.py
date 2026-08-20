@@ -18,6 +18,7 @@ from rest_framework.exceptions import PermissionDenied, Throttled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.ip import get_client_ip
 from apps.common.permissions import IsCareAdmin
 
 from .models import LoginAttempt, Organization, SessionToken
@@ -36,7 +37,7 @@ User = get_user_model()
 
 
 def _request_hashes(request, identifier):
-    ip = request.META.get("REMOTE_ADDR", "")
+    ip = get_client_ip(request)
     salt = settings.SECRET_KEY
     return (
         hashlib.sha256(f"{salt}:{identifier.lower()}".encode()).hexdigest(),
