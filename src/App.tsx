@@ -957,7 +957,23 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
             <div className="focus-actions"><button className="complete-button" onClick={() => onComplete(now)}><Check size={20} /> {copy.markDone}</button><button className="secondary-button" onClick={() => onTask(now)}>{copy.details}</button></div>
           </div>}
           {overdue.map((task) => <button className="overdue-card" key={task.id} onClick={() => onTask(task)}><span className="overdue-icon"><AlertCircle /></span><span className="overdue-copy"><span className="overdue-meta"><span>{copy.overdue}</span><time dir="ltr">{task.time}</time></span><strong><bdi>{task.title}</bdi></strong><em><bdi>{task.detail}</bdi></em></span><ChevronRight /></button>)}
-          <div className="up-next"><div className="subsection-heading"><h3>{copy.upNext}</h3><button onClick={() => onNavigate('schedule')}>{copy.viewSchedule} <ChevronRight size={16} /></button></div>{upcoming.map((task) => <TaskRow key={task.id} task={task} onClick={() => onTask(task)} />)}{!tasks.length && <div className="empty-care"><CheckCircle2 /><strong>{copy.noTasks}</strong><p>{copy.noTasksText}</p></div>}</div>
+          <div className="up-next">
+            <div className="subsection-heading">
+              <h3>{copy.upNext}</h3>
+              <button
+                type="button"
+                className="schedule-pill-button"
+                onClick={() => onNavigate('schedule')}
+                aria-label={copy.viewSchedule}
+              >
+                <CalendarDays size={14} className="schedule-pill-icon" aria-hidden="true" />
+                <span>{copy.viewSchedule}</span>
+                <ChevronRight size={14} className="schedule-pill-arrow" aria-hidden="true" />
+              </button>
+            </div>
+            {upcoming.map((task) => <TaskRow key={task.id} task={task} onClick={() => onTask(task)} />)}
+            {!tasks.length && <div className="empty-care"><CheckCircle2 /><strong>{copy.noTasks}</strong><p>{copy.noTasksText}</p></div>}
+          </div>
         </section>
 
         <aside className="dashboard-side">

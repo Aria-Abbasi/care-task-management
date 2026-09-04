@@ -199,6 +199,84 @@ main { margin-left: 260px; min-height: 100vh; }
 .subsection-heading p { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.4; }
 .subsection-heading button.text-button { border: 0; background: transparent; color: var(--green-2); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s ease; }
 .subsection-heading button.text-button:hover { background: #eef7f4; }
+.schedule-pill-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 14px 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(40, 117, 101, 0.22);
+  background: #edf6f2;
+  color: var(--green-2);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(22, 74, 63, 0.05);
+  transition-property: background-color, border-color, color, box-shadow, transform;
+  transition-duration: 0.18s;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.schedule-pill-button:hover {
+  background: #e2f1eb;
+  border-color: rgba(40, 117, 101, 0.38);
+  color: #123a32;
+  box-shadow: 0 3px 10px rgba(18, 58, 50, 0.12), 0 1px 2px rgba(18, 58, 50, 0.06);
+  transform: translateY(-1px);
+}
+.schedule-pill-button:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 1px 2px rgba(18, 58, 50, 0.06);
+  background: #d9ece4;
+}
+.schedule-pill-button:focus-visible {
+  outline: 2.5px solid var(--green-2);
+  outline-offset: 2px;
+}
+.schedule-pill-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--green-2);
+  opacity: 0.85;
+  transition: opacity 0.18s ease, color 0.18s ease;
+}
+.schedule-pill-button:hover .schedule-pill-icon {
+  opacity: 1;
+  color: #123a32;
+}
+.schedule-pill-arrow {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--green-2);
+  opacity: 0.8;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease, color 0.18s ease;
+}
+.schedule-pill-button:hover .schedule-pill-arrow {
+  opacity: 1;
+  color: #123a32;
+  transform: translateX(3px);
+}
+@media (max-width: 480px) {
+  .schedule-pill-button {
+    min-height: 32px;
+    padding: 5px 11px 5px 9px;
+    font-size: 11.5px;
+    gap: 5px;
+  }
+  .schedule-pill-icon,
+  .schedule-pill-arrow {
+    width: 13px;
+    height: 13px;
+  }
+}
 .task-row { border: 0; border-top: 1px solid #ecece5; background: transparent; width: 100%; min-height: 68px; display: grid; grid-template-columns: 50px auto minmax(0, 1fr) auto; align-items: center; gap: 12px; text-align: start; }
 .task-row time { font-size: 11px; font-weight: 700; }
 .task-row-copy { min-width: 0; }
@@ -968,6 +1046,12 @@ html[dir="rtl"] .notification-panel > header { padding-right:0; padding-left:40p
 html[dir="rtl"] .notification-panel { right:auto; left:18px; }
 html[dir="rtl"] .modal-close { right:auto; left:18px; }
 html[dir="rtl"] .task-row > svg, html[dir="rtl"] .table-row > svg, html[dir="rtl"] .settings-row > svg:last-child { transform:rotate(180deg); }
+html[dir="rtl"] .schedule-pill-button { padding: 6px 12px 6px 14px; }
+html[dir="rtl"] .schedule-pill-arrow { transform: rotate(180deg); }
+html[dir="rtl"] .schedule-pill-button:hover .schedule-pill-arrow { transform: rotate(180deg) translateX(3px); }
+@media (max-width: 480px) {
+  html[dir="rtl"] .schedule-pill-button { padding: 5px 9px 5px 11px; }
+}
 html[dir="rtl"] .schedule-item { text-align:right; }
 html[dir="rtl"] .medication-summary > div, html[dir="rtl"] .medication-summary > div > span { text-align:right; }
 html[dir="rtl"] .rtl-dose-row { text-align:right; }
