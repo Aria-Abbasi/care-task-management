@@ -910,12 +910,11 @@ class CareApiTests(APITestCase):
         self.assertEqual(resp_night.data["time_window"], "NIGHT")
 
     def test_suggested_quick_actions_ranking_by_time_window(self):
-        from datetime import datetime as dt
-
         from apps.common.timezones import patient_timezone
 
         self.authenticate()
         tz = patient_timezone(self.patient)
+        base_date = timezone.now().astimezone(tz).date()
 
         # Create morning task & completions
         morning_task = Task.objects.create(
@@ -925,9 +924,9 @@ class CareApiTests(APITestCase):
             schedule_type=Task.ScheduleType.ON_DEMAND,
             active=True,
         )
-        # Create 3 morning occurrences at 08:00
+        # Create 3 morning occurrences at 08:30 in recent days
         for i in range(1, 4):
-            occ_time = timezone.make_aware(dt(2026, 8, i, 8, 30), tz)
+            occ_time = timezone.make_aware(datetime.combine(base_date - timedelta(days=i), time(8, 30)), tz)
             occ = TaskOccurrence.objects.create(
                 task=morning_task,
                 scheduled_at=occ_time,
@@ -946,9 +945,9 @@ class CareApiTests(APITestCase):
             schedule_type=Task.ScheduleType.ON_DEMAND,
             active=True,
         )
-        # Create 3 night occurrences at 23:30
+        # Create 3 night occurrences at 23:30 in recent days
         for i in range(1, 4):
-            occ_time = timezone.make_aware(dt(2026, 8, i, 23, 30), tz)
+            occ_time = timezone.make_aware(datetime.combine(base_date - timedelta(days=i), time(23, 30)), tz)
             occ = TaskOccurrence.objects.create(
                 task=night_task,
                 scheduled_at=occ_time,
