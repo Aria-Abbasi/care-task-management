@@ -46,9 +46,13 @@ const english = {
     actionLogged: (title: string) => `Logged: ${title}`,
     undo: 'Undo',
     undone: 'Care action undone',
-    countBadge: (count: number) => `· ${count}×`,
+    countBadge: (count: number) => `${count}×`,
     dismiss: 'Dismiss',
     pinAsQuickAction: 'Save as Pinned Quick Action on Today Dashboard',
+    actionNoteRequiredTitle: 'Clinical Note Required',
+    actionNoteRequiredDesc: 'This action requires a clinical note before it can be recorded.',
+    notePlaceholder: 'Describe observations, care provided, or patient response...',
+    completeWithNote: 'Complete & Log Action',
   },
 } as const
 
@@ -90,9 +94,13 @@ const persian: TranslateShape<typeof english> = {
     actionLogged: (title) => `ثبت شد: ${title}`,
     undo: 'لغو / بازگردانی',
     undone: 'اقدام مراقبتی بازگردانده شد',
-    countBadge: (count) => `· ${new Intl.NumberFormat('fa-IR').format(count)}×`,
+    countBadge: (count) => `${new Intl.NumberFormat('fa-IR').format(count)}×`,
     dismiss: 'بستن',
     pinAsQuickAction: 'ذخیره به عنوان اقدام سریع در صفحه امروز',
+    actionNoteRequiredTitle: 'ثبت یادداشت بالینی الزامی است',
+    actionNoteRequiredDesc: 'برای ثبت این اقدام، نوشتن توضیحات و مشاهدات بالینی الزامی است.',
+    notePlaceholder: 'مشاهدات، مراقبت انجام‌شده یا وضعیت بیمار را شرح دهید...',
+    completeWithNote: 'ثبت و تایید اقدام',
   },
 }
 
@@ -113,8 +121,8 @@ export function localizedFallback(locale: string, error: unknown, englishFallbac
 
 export function formatCount(count: number, locale: string): string {
   if (locale === 'fa') {
-    return `· ${new Intl.NumberFormat('fa-IR').format(count)}×`
+    return `${new Intl.NumberFormat('fa-IR').format(count)}×`
   }
-  return `· ${count}×`
+  return `${count}×`
 }
 

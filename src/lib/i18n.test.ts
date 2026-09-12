@@ -11,8 +11,8 @@ describe('typed product copy', () => {
   })
 
   it('formats quick action count badges with Persian numerals when locale is fa', () => {
-    expect(formatCount(3, 'en')).toBe('· 3×')
-    expect(formatCount(3, 'fa')).toBe('· ۳×')
+    expect(formatCount(3, 'en')).toBe('3×')
+    expect(formatCount(3, 'fa')).toBe('۳×')
     expect(copy('en').quickActions.title).toBe('Quick Care Actions')
     expect(copy('fa').quickActions.title).toBe('اقدامات سریع و پرتکرار')
   })

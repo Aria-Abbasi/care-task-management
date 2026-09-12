@@ -4,7 +4,7 @@ from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.context import get_active_organization_id, get_tenant_role
@@ -228,6 +228,9 @@ def perform_quick_log(template, patient, user, request, client_reference=None, n
     if tenant_role == User.Role.FAMILY:
         if not getattr(patient.organization, "allow_family_task_completion", False):
             raise PermissionDenied("Family task completion is disabled for this organization.")
+
+    if template and getattr(template, "requires_note", False) and not (note and note.strip()):
+        raise ValidationError({"note": ["A clinical note is required to log this action."]})
 
     now = performed_at or timezone.now()
     final_note = note if note else template.default_note

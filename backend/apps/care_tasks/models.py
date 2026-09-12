@@ -111,6 +111,7 @@ class AdHocTemplate(TimeStampedModel):
     color = models.CharField(max_length=64, blank=True, default="")
     is_quick_action = models.BooleanField(default=True, db_index=True)
     default_note = models.TextField(blank=True)
+    requires_note = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
     active = models.BooleanField(default=True, db_index=True)
     client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline sync")

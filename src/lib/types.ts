@@ -151,6 +151,7 @@ export type AdHocQuickTemplate = {
   color?: string
   is_quick_action: boolean
   default_note?: string
+  requires_note?: boolean
   sort_order?: number
   active?: boolean
   client_reference?: string | null

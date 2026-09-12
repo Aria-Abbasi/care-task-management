@@ -1235,3 +1235,45 @@ class AdHocTemplateTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(res.data["task_detail"]["title"], "Assisted Walk")
         self.assertEqual(res.data["status"], TaskOccurrence.Status.DONE)
+
+    def test_requires_note_enforcement(self):
+        template = AdHocTemplate.objects.create(
+            organization=self.organization,
+            title="Complex Wound Check",
+            category=Task.Category.HEALTH,
+            icon="Activity",
+            sort_order=1,
+            active=True,
+            requires_note=True,
+        )
+        self.client.force_authenticate(user=self.caregiver)
+
+        # Logging without note should fail
+        res_fail = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+            },
+        )
+        self.assertEqual(res_fail.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("note", res_fail.data)
+
+        # Logging with empty note should fail
+        res_fail_empty = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+                "note": "   ",
+            },
+        )
+        self.assertEqual(res_fail_empty.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Logging with valid note should succeed
+        res_success = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+                "note": "Dressing changed, no signs of infection.",
+            },
+        )
+        self.assertEqual(res_success.status_code, status.HTTP_201_CREATED)

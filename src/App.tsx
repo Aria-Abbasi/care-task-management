@@ -540,6 +540,40 @@ function App() {
   }
 
   const addTask = async (draft: TaskCreationDraft) => {
+    setShowAddTask(false)
+    if (!session || !dashboard) return
+
+    if (draft.is_quick_action) {
+      try {
+        const iconName =
+          draft.category === 'HEALTH'
+            ? 'Activity'
+            : draft.category === 'MEAL'
+              ? 'Apple'
+              : draft.category === 'ACTIVITY'
+                ? 'Footprints'
+                : 'Sparkles'
+        await createAdHocTemplate(session.token, {
+          title: draft.title,
+          category: draft.category,
+          patient: dashboard.patient.id,
+          icon: iconName,
+          is_quick_action: true,
+          requires_note: draft.requires_note,
+          default_note: draft.instructions || '',
+        })
+        await refreshWorkspace(session, dashboard.patient.id)
+        notify(
+          locale === 'fa'
+            ? 'اقدام سریع در صفحه امروز ذخیره شد'
+            : 'Quick action pinned to Today dashboard',
+        )
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Quick action could not be created')
+      }
+      return
+    }
+
     const localTask: CareTask = {
       id: -Date.now(),
       status: 'upcoming',
@@ -551,8 +585,6 @@ function App() {
       instructions: draft.instructions,
     }
     setTasks((current) => [...current, localTask])
-    setShowAddTask(false)
-    if (!session || !dashboard) return
     const reference = crypto.randomUUID()
     try {
       const result = await mutateOrQueue(session.token, {
@@ -577,27 +609,6 @@ function App() {
         },
       })
       await updatePendingCount()
-      if (draft.is_quick_action) {
-        try {
-          const iconName =
-            draft.category === 'HEALTH'
-              ? 'Activity'
-              : draft.category === 'MEAL'
-                ? 'Apple'
-                : draft.category === 'ACTIVITY'
-                  ? 'Footprints'
-                  : 'Sparkles'
-          await createAdHocTemplate(session.token, {
-            title: draft.title,
-            category: draft.category,
-            patient: dashboard.patient.id,
-            icon: iconName,
-            is_quick_action: true,
-          })
-        } catch {
-          // non-blocking
-        }
-      }
       if (!result.queued) await refreshWorkspace(session)
       notify(result.queued ? 'Task saved offline and queued' : 'Task added to the care plan')
     } catch (error) {
@@ -1025,6 +1036,9 @@ export function Dashboard({
   const [adHocNote, setAdHocNote] = useState('')
   const [adHocCategory, setAdHocCategory] = useState<TaskTemplate['category']>('PERSONAL_CARE')
   const [adHocSubmitting, setAdHocSubmitting] = useState(false)
+  const [notePromptTemplate, setNotePromptTemplate] = useState<AdHocQuickTemplate | null>(null)
+  const [promptNote, setPromptNote] = useState('')
+  const [promptError, setPromptError] = useState('')
 
   const loadQuickTemplates = useCallback(async () => {
     if (!session) return
@@ -1064,7 +1078,7 @@ export function Dashboard({
     return () => clearInterval(interval)
   }, [undoToast])
 
-  const handleQuickAction = async (template: AdHocQuickTemplate) => {
+  const executeQuickAction = async (template: AdHocQuickTemplate, customNote?: string) => {
     if (!session || loggingTemplateId !== null) return
     setLoggingTemplateId(template.id)
 
@@ -1082,13 +1096,14 @@ export function Dashboard({
     }, 1200)
 
     const clientReference = crypto.randomUUID()
+    const finalNote = customNote !== undefined ? customNote : (template.default_note || '')
     try {
       const result = await quickLogAdHocAction(
         session.token,
         session.user.id,
         template.id,
         patient.id,
-        template.default_note || '',
+        finalNote,
         clientReference,
       )
       if (updatePendingCount) await updatePendingCount()
@@ -1112,6 +1127,16 @@ export function Dashboard({
     } finally {
       setLoggingTemplateId(null)
     }
+  }
+
+  const handleQuickAction = (template: AdHocQuickTemplate) => {
+    if (template.requires_note) {
+      setPromptNote(template.default_note || '')
+      setPromptError('')
+      setNotePromptTemplate(template)
+      return
+    }
+    executeQuickAction(template)
   }
 
   const handleUndo = async () => {
@@ -1184,6 +1209,10 @@ export function Dashboard({
     handoverText: 'وظیفه بعدی و سابقه تأییدها را بررسی کنید.', reports: 'باز کردن گزارش‌های شیفت', careCircle: 'حلقه مراقبت بیمار', contacts: 'مخاطبان مجاز',
     contactsText: 'از پرونده بالینی بارگذاری شده', familyText: 'گفت‌وگوی ویژه بیمار را باز کنید یا مخاطبان مجاز خانواده را بررسی کنید.', messages: 'باز کردن پیام‌ها',
     quickCare: 'اقدامات سریع و پرتکرار', quickCareDesc: 'مراقبت‌های استاندارد بدون برنامه', customAction: 'اقدام مراقبتی سفارشی', undo: 'لغو / بازگردانی',
+    actionNoteRequiredTitle: 'ثبت یادداشت بالینی الزامی است',
+    actionNoteRequiredDesc: 'برای ثبت این اقدام، نوشتن توضیحات و مشاهدات بالینی الزامی است.',
+    notePlaceholder: 'مشاهدات، مراقبت انجام‌شده یا وضعیت بیمار را شرح دهید...',
+    completeWithNote: 'ثبت و تایید اقدام',
   } : {
     needsToday: `Here's what ${patient.first_name} needs today.`, addTask: 'Add task', activePlan: 'Active care plan', inactivePlan: 'Care plan inactive',
     yearsOld: `${patient.age} years old`, room: patient.room ? ` · Room ${patient.room}` : '', bloodPressure: 'Blood pressure', oxygen: 'Oxygen', temperature: 'Temperature',
@@ -1193,6 +1222,10 @@ export function Dashboard({
     handoverText: 'Review the actual next assignment and acknowledgement history.', reports: 'Open shift reports', careCircle: 'PATIENT CARE CIRCLE', contacts: 'Authorized contacts',
     contactsText: 'Loaded from the clinical record', familyText: 'Open the patient-specific conversation or review authorized family contacts.', messages: 'Open messages',
     quickCare: 'Quick Care Actions', quickCareDesc: 'Standardized unscheduled care', customAction: 'Custom care action', undo: 'Undo',
+    actionNoteRequiredTitle: 'Clinical Note Required',
+    actionNoteRequiredDesc: 'This action requires a clinical note before it can be recorded.',
+    notePlaceholder: 'Describe observations, care provided, or patient response...',
+    completeWithNote: 'Complete & Log Action',
   }
 
   return (
@@ -1432,6 +1465,67 @@ export function Dashboard({
                 disabled={adHocSubmitting || !adHocTitle.trim()}
               >
                 <Check size={18} /> {adHocSubmitting ? (isPersian ? 'در حال ثبت…' : 'Logging…') : (isPersian ? 'ثبت اقدام' : 'Log care action')}
+              </button>
+            </footer>
+          </form>
+        </Modal>
+      )}
+
+      {/* Required Note Modal for Quick Action */}
+      {notePromptTemplate && (
+        <Modal
+          onClose={() => setNotePromptTemplate(null)}
+          label={copy.actionNoteRequiredTitle}
+          locale={locale}
+        >
+          <header className="builder-header">
+            <span className="eyebrow">{isPersian ? 'اقدام نیازمند یادداشت' : 'CLINICAL NOTE REQUIRED'}</span>
+            <h2>{notePromptTemplate.title}</h2>
+            <p>{copy.actionNoteRequiredDesc}</p>
+          </header>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!promptNote.trim()) {
+                setPromptError(isPersian ? 'نوشتن یادداشت بالینی الزامی است.' : 'A clinical note is required.')
+                return
+              }
+              const tpl = notePromptTemplate
+              setNotePromptTemplate(null)
+              await executeQuickAction(tpl, promptNote.trim())
+            }}
+            className="task-form"
+          >
+            <label>
+              {isPersian ? 'توضیحات و مشاهدات بالینی' : 'Clinical observations & note'}
+              <textarea
+                autoFocus
+                required
+                value={promptNote}
+                onChange={(e) => {
+                  setPromptNote(e.target.value)
+                  if (promptError) setPromptError('')
+                }}
+                placeholder={copy.notePlaceholder}
+                rows={4}
+              />
+            </label>
+            {promptError && (
+              <div className="login-error" role="alert">
+                <AlertCircle size={16} /> {promptError}
+              </div>
+            )}
+            <footer className="builder-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setNotePromptTemplate(null)}
+              >
+                {isPersian ? 'انصراف' : 'Cancel'}
+              </button>
+              <span />
+              <button type="submit" className="primary-button" disabled={!promptNote.trim()}>
+                <Check size={18} /> {copy.completeWithNote}
               </button>
             </footer>
           </form>

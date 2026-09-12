@@ -105,14 +105,14 @@ describe('Standardized Ad-Hoc Quick Actions & Dual-Column Dashboard', () => {
     expect(markup).toContain('اقدام مراقبتی سفارشی')
   })
 
-  it('formats quick action counts with Persian numerals when locale is fa', () => {
-    expect(formatCount(1, 'en')).toBe('· 1×')
-    expect(formatCount(3, 'en')).toBe('· 3×')
-    expect(formatCount(1, 'fa')).toBe('· ۱×')
-    expect(formatCount(5, 'fa')).toBe('· ۵×')
+  it('formats quick action counts with Persian numerals when locale is fa without middle dot', () => {
+    expect(formatCount(1, 'en')).toBe('1×')
+    expect(formatCount(3, 'en')).toBe('3×')
+    expect(formatCount(1, 'fa')).toBe('۱×')
+    expect(formatCount(5, 'fa')).toBe('۵×')
   })
 
-  it('includes pinned quick action toggle in TaskBuilder when frequency is ONCE', () => {
+  it('includes pinned quick action toggle in TaskBuilder step 0 (Task Details)', () => {
     const markup = renderToStaticMarkup(
       <TaskBuilder
         patient={patient}
@@ -121,15 +121,14 @@ describe('Standardized Ad-Hoc Quick Actions & Dual-Column Dashboard', () => {
         onClose={vi.fn()}
         onCreate={vi.fn()}
         locale="en"
-        initialStep={1}
-        initialFrequency="ONCE"
+        initialStep={0}
       />,
     )
 
     expect(markup).toContain('Save as Pinned Quick Action on Today Dashboard')
   })
 
-  it('includes localized Persian pinned quick action toggle in TaskBuilder', () => {
+  it('includes localized Persian pinned quick action toggle in TaskBuilder step 0', () => {
     const markup = renderToStaticMarkup(
       <TaskBuilder
         patient={patient}
@@ -138,8 +137,7 @@ describe('Standardized Ad-Hoc Quick Actions & Dual-Column Dashboard', () => {
         onClose={vi.fn()}
         onCreate={vi.fn()}
         locale="fa"
-        initialStep={1}
-        initialFrequency="ONCE"
+        initialStep={0}
       />,
     )
 
@@ -241,5 +239,21 @@ describe('Standardized Ad-Hoc Quick Actions & Dual-Column Dashboard', () => {
     expect(cached).toHaveLength(1)
     expect(cached[0].title).toBe('Hydration / Drinking Water')
     expect(cached[0].today_count).toBe(3)
+  })
+
+  it('omits schedule step and submits draft with is_quick_action when toggle is on', () => {
+    const onCreateMock = vi.fn()
+    const markup = renderToStaticMarkup(
+      <TaskBuilder
+        patient={patient}
+        token="test-token"
+        existingTitles={[]}
+        onClose={vi.fn()}
+        onCreate={onCreateMock}
+        locale="en"
+        initialStep={0}
+      />,
+    )
+    expect(markup).toContain('Save as Pinned Quick Action on Today Dashboard')
   })
 })

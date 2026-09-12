@@ -232,6 +232,7 @@ class AdHocTemplateSerializer(serializers.ModelSerializer):
             "color",
             "is_quick_action",
             "default_note",
+            "requires_note",
             "sort_order",
             "active",
             "client_reference",
