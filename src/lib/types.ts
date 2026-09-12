@@ -140,11 +140,31 @@ export type OrganizationTaskTemplate = {
 
 export type PushSubscription = { id: number; endpoint: string; device_name: string; active: boolean; created_at: string }
 
+export type AdHocQuickTemplate = {
+  id: number
+  organization?: number
+  patient?: number | null
+  patient_id?: number | null
+  title: string
+  category: TaskTemplate['category']
+  icon: string
+  color?: string
+  is_quick_action: boolean
+  default_note?: string
+  sort_order?: number
+  active?: boolean
+  client_reference?: string | null
+  today_count?: number
+  created_at?: string
+  updated_at?: string
+}
+
 export type TaskOccurrence = {
   id: number
   task: number
   task_detail: TaskTemplate
   schedule: number | null
+  ad_hoc_template?: number | null
   scheduled_at: string
   effective_scheduled_at: string
   status: 'PENDING' | 'DONE' | 'MISSED' | 'SKIPPED' | 'DELAYED'

@@ -15,7 +15,12 @@ from apps.accounts.views import (
     SessionViewSet,
     UserViewSet,
 )
-from apps.care_tasks.views import CareTaskTemplateViewSet, TaskOccurrenceViewSet, TaskViewSet
+from apps.care_tasks.views import (
+    AdHocTemplateViewSet,
+    CareTaskTemplateViewSet,
+    TaskOccurrenceViewSet,
+    TaskViewSet,
+)
 from apps.clinical.views import (
     AdvanceDirectiveViewSet,
     AllergyViewSet,
@@ -66,7 +71,10 @@ router.register("patients", PatientViewSet, basename="patient")
 router.register("assignments", CareAssignmentViewSet, basename="assignment")
 router.register("tasks", TaskViewSet, basename="task")
 router.register("task-templates", CareTaskTemplateViewSet, basename="task-template")
+router.register("ad-hoc-templates", AdHocTemplateViewSet, basename="ad-hoc-template")
 router.register("occurrences", TaskOccurrenceViewSet, basename="occurrence")
+router.register("care-tasks/ad-hoc-templates", AdHocTemplateViewSet, basename="care-task-ad-hoc-template")
+router.register("care-tasks/occurrences", TaskOccurrenceViewSet, basename="care-task-occurrence")
 router.register("medications", MedicationViewSet, basename="medication")
 router.register("dose-logs", DoseLogViewSet, basename="dose-log")
 router.register("medication-interactions", MedicationInteractionViewSet, basename="medication-interaction")

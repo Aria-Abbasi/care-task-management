@@ -1,6 +1,6 @@
 import { listMutations, queueMutation, removeMutation, updateMutation, type QueuedMutation } from './offline'
 import { createContractTransport, type ApiPath } from './generated-api'
-import type { AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, FoodIntakeLog, MealDefinition, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, SuggestedQuickActionsResponse, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
+import type { AdHocQuickTemplate, AdvanceDirective, Allergy, ApiUser, AuditEvent, CalendarData, CareAssignment, CareNotification, CarePlan, CaregiverAvailability, ClinicalDocument, Conversation, CustomVitalType, DashboardResponse, DeviceSession, Diagnosis, EmergencyContact, EscalationPolicy, FoodIntakeLog, MealDefinition, Medication, Message, NotificationDelivery, NotificationPreference, Organization, OrganizationTaskTemplate, Paginated, Patient, PushSubscription, RefillRequest, Session, ShiftAssignment, ShiftReport, SuggestedQuickActionsResponse, TaskOccurrence, TaskTemplate, VitalRecord, VitalThreshold, VitalTypeOption, WoundRecord } from './types'
 
 const API_ROOT = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
 const SESSION_KEY = 'haven.session'
@@ -301,6 +301,62 @@ export async function getSuggestedQuickActions(token: string, patientId: number,
   return request<SuggestedQuickActionsResponse>(`/tasks/suggested-quick-actions/${query}`, {}, token)
 }
 
+export async function getAdHocTemplates(token: string, patientId?: number): Promise<AdHocQuickTemplate[]> {
+  const query = patientId ? `?patient=${patientId}&active=true&ordering=sort_order` : '?active=true&ordering=sort_order'
+  return (await request<Paginated<AdHocQuickTemplate>>(`/ad-hoc-templates/${query}`, {}, token)).results
+}
+
+export async function createAdHocTemplate(token: string, payload: Partial<AdHocQuickTemplate>): Promise<AdHocQuickTemplate> {
+  return request<AdHocQuickTemplate>('/ad-hoc-templates/', { method: 'POST', body: JSON.stringify(payload) }, token)
+}
+
+export async function quickLogAdHocAction(
+  token: string,
+  userIdOrTemplateId: number,
+  templateIdOrPatientId: number,
+  patientIdOrNote?: number | string,
+  noteOrClientRef?: string,
+  clientReference?: string,
+): Promise<MutationResult<TaskOccurrence>> {
+  let userId: number
+  let templateId: number
+  let patientId: number
+  let note = ''
+  let ref = ''
+
+  if (typeof patientIdOrNote === 'number') {
+    // Called as: (token, userId, templateId, patientId, note?, clientReference?)
+    userId = userIdOrTemplateId
+    templateId = templateIdOrPatientId
+    patientId = patientIdOrNote
+    note = typeof noteOrClientRef === 'string' ? noteOrClientRef : ''
+    ref = clientReference || crypto.randomUUID()
+  } else {
+    // Called as: (token, templateId, patientId, note?, clientReference?)
+    userId = loadSession()?.user.id || 0
+    templateId = userIdOrTemplateId
+    patientId = templateIdOrPatientId
+    note = typeof patientIdOrNote === 'string' ? patientIdOrNote : ''
+    ref = noteOrClientRef || crypto.randomUUID()
+  }
+
+  return mutateOrQueue<TaskOccurrence>(token, {
+    id: ref,
+    userId,
+    path: `/ad-hoc-templates/${templateId}/log/`,
+    method: 'POST',
+    body: {
+      patient_id: patientId,
+      note,
+      client_reference: ref,
+    },
+  })
+}
+
+export async function undoQuickLogAction(token: string, occurrenceId: number): Promise<void> {
+  await request<TaskOccurrence>(`/occurrences/${occurrenceId}/undo/`, { method: 'POST' }, token)
+}
+
 export const switchOrganization = async (token: string, orgId: number) => {
   const updatedUser = await request<ApiUser>(`/organizations/${orgId}/switch/`, { method: 'POST' }, token)
   if (typeof localStorage !== 'undefined') {
@@ -360,7 +416,7 @@ export async function mutateOrQueue<T>(
   mutation: Omit<QueuedMutation, 'createdAt' | 'attempts'>,
 ): Promise<MutationResult<T>> {
   const item: QueuedMutation = { ...mutation, createdAt: new Date().toISOString(), attempts: 0, status: 'pending' }
-  if (!navigator.onLine) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     await queueMutation(item)
     return { queued: true }
   }

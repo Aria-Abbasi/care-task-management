@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -15,8 +16,9 @@ from apps.patients.access import patients_for_user
 from apps.patients.models import Patient
 from apps.safety.services import record_audit
 
-from .models import CareTaskTemplate, CompletionLog, Task, TaskOccurrence
+from .models import AdHocTemplate, CareTaskTemplate, CompletionLog, Task, TaskOccurrence
 from .serializers import (
+    AdHocTemplateSerializer,
     CareTaskTemplateSerializer,
     CompleteOccurrenceSerializer,
     CorrectOccurrenceSerializer,
@@ -39,6 +41,11 @@ class PatientAccessMixin:
         tenant_role = get_tenant_role(self.request.user, self.request)
         if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR, User.Role.CAREGIVER}):
             raise PermissionDenied("Family accounts can review care but cannot record or change clinical care.")
+
+    def require_supervisor_or_admin(self):
+        tenant_role = get_tenant_role(self.request.user, self.request)
+        if not (self.request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR}):
+            raise PermissionDenied("Only administrators and clinicians can manage care templates.")
 
 
 class TaskViewSet(PatientAccessMixin, viewsets.ModelViewSet):
@@ -211,6 +218,176 @@ class CareTaskTemplateViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["active", "updated_at"])
 
 
+def perform_quick_log(template, patient, user, request, client_reference=None, note="", performed_at=None):
+    if client_reference:
+        existing_log = CompletionLog.objects.filter(client_reference=client_reference).select_related("occurrence").first()
+        if existing_log:
+            return existing_log.occurrence, False
+
+    tenant_role = get_tenant_role(user, request)
+    if tenant_role == User.Role.FAMILY:
+        if not getattr(patient.organization, "allow_family_task_completion", False):
+            raise PermissionDenied("Family task completion is disabled for this organization.")
+
+    now = performed_at or timezone.now()
+    final_note = note if note else template.default_note
+
+    with transaction.atomic():
+        # Canonical task de-duplication: fetch or create a single ON_DEMAND task for this patient and title
+        task, _ = Task.objects.get_or_create(
+            patient=patient,
+            title=template.title,
+            schedule_type=Task.ScheduleType.ON_DEMAND,
+            defaults={
+                "category": template.category,
+                "priority": Task.Priority.NORMAL,
+                "instructions": template.default_note,
+                "assigned_to": user if tenant_role == User.Role.CAREGIVER else None,
+                "active": True,
+            },
+        )
+        if not task.active:
+            task.active = True
+            task.save(update_fields=["active", "updated_at"])
+
+        occurrence = TaskOccurrence.objects.create(
+            task=task,
+            ad_hoc_template=template,
+            scheduled_at=now,
+            status=TaskOccurrence.Status.DONE,
+            completed_at=now,
+            completed_by=user,
+            outcome=CompletionLog.Outcome.COMPLETED,
+            version=1,
+        )
+        CompletionLog.objects.create(
+            occurrence=occurrence,
+            completed_by=user,
+            outcome=CompletionLog.Outcome.COMPLETED,
+            note=final_note,
+            client_reference=client_reference,
+        )
+        record_audit(
+            actor=user,
+            patient=patient,
+            action="TASK_ON_DEMAND_LOGGED",
+            instance=occurrence,
+            summary=f"Quick logged care action: {template.title}",
+            metadata={"note": final_note, "outcome": CompletionLog.Outcome.COMPLETED, "template_id": template.id},
+            client_reference=client_reference,
+        )
+    return occurrence, True
+
+
+class AdHocTemplateViewSet(PatientAccessMixin, viewsets.ModelViewSet):
+    serializer_class = AdHocTemplateSerializer
+    filterset_fields = ["category", "is_quick_action", "active"]
+    search_fields = ["title", "default_note"]
+    ordering_fields = ["sort_order", "title", "created_at"]
+
+    def get_queryset(self):
+        queryset = AdHocTemplate.objects.filter(active=True).select_related("organization", "patient")
+        if not self.request.user.is_superuser:
+            active_org_id = get_active_organization_id(self.request.user, self.request) or self.request.user.organization_id
+            if active_org_id:
+                queryset = queryset.filter(organization_id=active_org_id)
+            else:
+                return queryset.none()
+
+        patient_param = self.request.query_params.get("patient")
+        if patient_param:
+            try:
+                patient = Patient.objects.get(pk=patient_param)
+                self.validate_patient_access(patient)
+                queryset = queryset.filter(Q(patient=patient) | Q(patient__isnull=True))
+            except (Patient.DoesNotExist, ValueError):
+                return queryset.none()
+        return queryset
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        patient_param = self.request.query_params.get("patient")
+        if patient_param:
+            context["patient_id"] = patient_param
+        return context
+
+    def perform_create(self, serializer):
+        self.require_supervisor_or_admin()
+        patient = serializer.validated_data.get("patient")
+        if patient:
+            self.validate_patient_access(patient)
+            organization = patient.organization
+        else:
+            active_org_id = get_active_organization_id(self.request.user, self.request) or self.request.user.organization_id
+            if not active_org_id:
+                raise PermissionDenied("User is not associated with an organization.")
+            organization = Organization.objects.get(pk=active_org_id)
+        template = serializer.save(organization=organization)
+        record_audit(
+            actor=self.request.user,
+            patient=template.patient,
+            action="ADHOC_TEMPLATE_CREATED",
+            instance=template,
+            summary=f"Created ad-hoc template: {template.title}",
+        )
+
+    def perform_update(self, serializer):
+        self.require_supervisor_or_admin()
+        patient = serializer.validated_data.get("patient", serializer.instance.patient)
+        if patient:
+            self.validate_patient_access(patient)
+        template = serializer.save()
+        record_audit(
+            actor=self.request.user,
+            patient=template.patient,
+            action="ADHOC_TEMPLATE_UPDATED",
+            instance=template,
+            summary=f"Updated ad-hoc template: {template.title}",
+        )
+
+    def perform_destroy(self, instance):
+        self.require_supervisor_or_admin()
+        instance.active = False
+        instance.save(update_fields=["active", "updated_at"])
+        record_audit(
+            actor=self.request.user,
+            patient=instance.patient,
+            action="ADHOC_TEMPLATE_DEACTIVATED",
+            instance=instance,
+            summary=f"Deactivated ad-hoc template: {instance.title}",
+        )
+
+    @action(detail=True, methods=["post"], url_path="log")
+    def log(self, request, pk=None):
+        template = self.get_object()
+        patient_id = request.data.get("patient") or request.data.get("patient_id")
+        if not patient_id:
+            return Response({"patient": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            patient = Patient.objects.get(pk=patient_id)
+        except (Patient.DoesNotExist, ValueError):
+            return Response({"patient": ["Patient not found."]}, status=status.HTTP_404_NOT_FOUND)
+        self.validate_patient_access(patient)
+
+        client_reference = request.data.get("client_reference")
+        note = request.data.get("note", "")
+        performed_at = request.data.get("performed_at")
+
+        occurrence, was_created = perform_quick_log(
+            template=template,
+            patient=patient,
+            user=request.user,
+            request=request,
+            client_reference=client_reference,
+            note=note,
+            performed_at=performed_at,
+        )
+        return Response(
+            TaskOccurrenceSerializer(occurrence, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if was_created else status.HTTP_200_OK,
+        )
+
+
 class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
     serializer_class = TaskOccurrenceSerializer
     http_method_names = ["get", "post", "head", "options"]
@@ -376,3 +553,79 @@ class TaskOccurrenceViewSet(PatientAccessMixin, viewsets.ModelViewSet):
         serializer.save()
         occurrence.refresh_from_db()
         return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data)
+
+    @action(detail=False, methods=["post"], url_path="quick-log")
+    def quick_log(self, request):
+        template_id = request.data.get("template_id") or request.data.get("template")
+        if not template_id:
+            return Response({"template_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        template = AdHocTemplate.objects.filter(pk=template_id, active=True).first()
+        if not template:
+            return Response({"template_id": ["Template not found."]}, status=status.HTTP_404_NOT_FOUND)
+
+        patient_id = request.data.get("patient") or request.data.get("patient_id")
+        if not patient_id:
+            return Response({"patient": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            patient = Patient.objects.get(pk=patient_id)
+        except (Patient.DoesNotExist, ValueError):
+            return Response({"patient": ["Patient not found."]}, status=status.HTTP_404_NOT_FOUND)
+        self.validate_patient_access(patient)
+
+        client_reference = request.data.get("client_reference")
+        note = request.data.get("note", "")
+        performed_at = request.data.get("performed_at")
+
+        occurrence, was_created = perform_quick_log(
+            template=template,
+            patient=patient,
+            user=request.user,
+            request=request,
+            client_reference=client_reference,
+            note=note,
+            performed_at=performed_at,
+        )
+        return Response(
+            TaskOccurrenceSerializer(occurrence, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if was_created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="undo")
+    def undo(self, request, pk=None):
+        occurrence = self.get_object()
+        tenant_role = get_tenant_role(request.user, request)
+        is_supervisor = request.user.is_superuser or tenant_role in {User.Role.ADMIN, User.Role.DOCTOR}
+        if occurrence.completed_by_id != request.user.id and not is_supervisor:
+            raise PermissionDenied("You can only undo care actions that you recorded.")
+
+        if occurrence.status != TaskOccurrence.Status.DONE:
+            return Response({"detail": "Only completed occurrences can be undone."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Bounded undo window (grace window of 300 seconds)
+        if occurrence.completed_at and (timezone.now() - occurrence.completed_at).total_seconds() > 300:
+            return Response(
+                {"detail": "This action can no longer be undone. The undo window has expired."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            occurrence.status = TaskOccurrence.Status.SKIPPED
+            occurrence.outcome = "REFUSED"
+            occurrence.version += 1
+            occurrence.save(update_fields=["status", "outcome", "version", "updated_at"])
+
+            completion = getattr(occurrence, "completion", None)
+            if completion:
+                completion.outcome = CompletionLog.Outcome.REFUSED
+                completion.note = f"{completion.note} [Undone by {request.user.display_name} within grace window]".strip()
+                completion.save(update_fields=["outcome", "note", "updated_at"])
+
+            record_audit(
+                actor=request.user,
+                patient=occurrence.task.patient,
+                action="TASK_QUICK_LOG_UNDONE",
+                instance=occurrence,
+                summary=f"Undid quick-log: {occurrence.task.title}",
+                metadata={"reason": "Undone by caregiver within grace window", "previous_status": "DONE"},
+            )
+
+        return Response(TaskOccurrenceSerializer(occurrence, context={"request": request}).data, status=status.HTTP_200_OK)

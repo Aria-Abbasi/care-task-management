@@ -1,12 +1,12 @@
 import { CSSProperties, FormEvent, lazy, ReactNode, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, AlertCircle, ArrowLeft, Bell, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronRight, ClipboardCheck, Clock3, HeartPulse, Home,
-  Menu, MessageCircle, Plus, Search, Settings,
+  Activity, AlertCircle, Apple, ArrowLeft, Bell, CalendarDays, Check, CheckCircle2,
+  ChevronDown, ChevronRight, ClipboardCheck, Clock3, Droplets, HeartPulse, Home,
+  Menu, MessageCircle, Plus, RotateCw, Search, Settings,
   ShieldCheck, Sparkles, Stethoscope, Sun, Thermometer,
   X, Pill, Footprints, Utensils, FileText, Cloud, CloudOff, RefreshCw,
   History, RotateCcw, Save, TriangleAlert,
-  UserRound,
+  UserRound, Zap,
 } from 'lucide-react'
 import {
   ApiError,
@@ -14,7 +14,10 @@ import {
   clearSession,
   completeOccurrenceWithPhoto,
   confirmPasswordReset,
+  createAdHocTask,
+  createAdHocTemplate,
   flushMutationQueue,
+  getAdHocTemplates,
   getAuditEvents,
   getCalendar,
   getSignedAuditExport,
@@ -29,12 +32,14 @@ import {
   lookupMedicationBarcode,
   logout,
   mutateOrQueue,
+  quickLogAdHocAction,
   requestRefill,
   reviewMedicationOrder,
   administerPrn,
   refreshNotifications,
   requestPasswordReset,
   rotateSession,
+  undoQuickLogAction,
   updateNotification,
   saveSession,
   saveMedicationOrder,
@@ -44,18 +49,18 @@ import {
   switchOrganization,
 } from './lib/api'
 import {
-  cacheDashboard, cachePatients, clearOfflineData, listMutations, pendingMutationCount, queuedMutationOwners,
-  readCachedDashboard, readCachedPatients, removeMutation, retryMutation, type QueuedMutation,
+  cacheDashboard, cachePatients, cacheQuickTemplates, clearOfflineData, listMutations, pendingMutationCount, queuedMutationOwners,
+  readCachedDashboard, readCachedPatients, readCachedQuickTemplates, removeMutation, retryMutation, type QueuedMutation,
 } from './lib/offline'
 import { TaskBuilder } from './features/TaskBuilder'
 import UnifiedSchedule from './features/UnifiedSchedule'
 import ShiftModeView from './features/ShiftModeView'
 import { SidebarAccountMenu, TopAccountMenu } from './components/AccountMenus'
-import { copy } from './lib/i18n'
+import { copy, formatCount } from './lib/i18n'
 import type { TaskCreationDraft } from './lib/task-builder'
 import type {
-  ApiUser, AuditEvent, CalendarData, CareNotification, DashboardResponse, DoseLog, Medication, Patient,
-  Session, ShiftAssignment, TaskOccurrence, VitalRecord, VitalTypeOption,
+  AdHocQuickTemplate, ApiUser, AuditEvent, CalendarData, CareNotification, DashboardResponse, DoseLog, Medication, Patient,
+  Session, ShiftAssignment, TaskOccurrence, TaskTemplate, VitalRecord, VitalTypeOption,
 } from './lib/types'
 
 type View = 'today' | 'shift' | 'schedule' | 'tasks' | 'meals' | 'medications' | 'clinical' | 'health' | 'timeline' | 'reports' | 'messages' | 'safety' | 'admin' | 'settings'
@@ -572,6 +577,27 @@ function App() {
         },
       })
       await updatePendingCount()
+      if (draft.is_quick_action) {
+        try {
+          const iconName =
+            draft.category === 'HEALTH'
+              ? 'Activity'
+              : draft.category === 'MEAL'
+                ? 'Apple'
+                : draft.category === 'ACTIVITY'
+                  ? 'Footprints'
+                  : 'Sparkles'
+          await createAdHocTemplate(session.token, {
+            title: draft.title,
+            category: draft.category,
+            patient: dashboard.patient.id,
+            icon: iconName,
+            is_quick_action: true,
+          })
+        } catch {
+          // non-blocking
+        }
+      }
       if (!result.queued) await refreshWorkspace(session)
       notify(result.queued ? 'Task saved offline and queued' : 'Task added to the care plan')
     } catch (error) {
@@ -774,7 +800,23 @@ function App() {
         <div className="content">
           {workspaceError && <div className="workspace-notice"><CloudOff />{workspaceError}</div>}
           <div className="role-context" role="status"><ShieldCheck /> <strong>{roleContext[0]}</strong><span>{roleContext[1]}</span></div>
-          {view === 'today' && <Dashboard tasks={tasks} patient={patient} user={user} locale={locale} vitals={dashboard.latest_vitals} onTask={setSelectedTask} onComplete={setSelectedTask} onAdd={() => setShowAddTask(true)} onNavigate={navigate} />}
+          {view === 'today' && (
+            <Dashboard
+              tasks={tasks}
+              patient={patient}
+              user={user}
+              locale={locale}
+              vitals={dashboard.latest_vitals}
+              session={session}
+              onTask={setSelectedTask}
+              onComplete={setSelectedTask}
+              onAdd={() => setShowAddTask(true)}
+              onNavigate={navigate}
+              onRefreshWorkspace={() => refreshWorkspace(session)}
+              notify={notify}
+              updatePendingCount={updatePendingCount}
+            />
+          )}
           {view === 'shift' && <ShiftModeView patient={patient} tasks={tasks} doses={dashboard.dose_logs} offline={!online} pending={pendingSync} locale={locale} onTask={setSelectedTask} onDose={setSelectedDose} />}
           {view === 'schedule' && <Schedule session={session} patient={patient} tasks={tasks} locale={locale} selectedDate={selectedDate} onDate={(date) => refreshWorkspace(session, patient.id, date)} onTask={setSelectedTask} onAdd={() => setShowAddTask(true)} />}
           {view === 'medications' && <Medications session={session} patient={patient} medications={dashboard.medications} doses={dashboard.dose_logs} onDose={setSelectedDose} onPrn={setSelectedPrn} notify={notify} onRefresh={() => refreshWorkspace(session, patient.id, selectedDate)} locale={locale} />}
@@ -899,7 +941,58 @@ function WorkspaceError({ message, onRetry, onSignOut, locale }: { message: stri
   return <div className="state-page" dir={fa ? 'rtl' : 'ltr'}><div className="state-card error"><AlertCircle /><h2>{fa ? 'فضای کاری مراقبت در دسترس نیست' : 'Care workspace unavailable'}</h2><p>{message}</p><button className="primary-button" onClick={onRetry}><RefreshCw /> {fa ? 'تلاش دوباره' : 'Try again'}</button><button className="text-button" onClick={onSignOut}>{fa ? 'خروج از حساب' : 'Sign out'}</button></div></div>
 }
 
-function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, onAdd, onNavigate }: { tasks: CareTask[]; patient: Patient; user: ApiUser; locale: string; vitals: VitalRecord[]; onTask: (task: CareTask) => void; onComplete: (task: CareTask) => void; onAdd: () => void; onNavigate: (view: View) => void }) {
+function renderActionIcon(name: string, size = 18) {
+  switch (name) {
+    case 'Droplets':
+      return <Droplets size={size} />
+    case 'RotateCw':
+      return <RotateCw size={size} />
+    case 'Footprints':
+      return <Footprints size={size} />
+    case 'Apple':
+      return <Apple size={size} />
+    case 'Activity':
+      return <Activity size={size} />
+    case 'Pill':
+      return <Pill size={size} />
+    case 'HeartPulse':
+      return <HeartPulse size={size} />
+    case 'Utensils':
+      return <Utensils size={size} />
+    default:
+      return <Sparkles size={size} />
+  }
+}
+
+export function Dashboard({
+  tasks,
+  patient,
+  user,
+  locale,
+  vitals,
+  session,
+  onTask,
+  onComplete,
+  onAdd,
+  onNavigate,
+  onRefreshWorkspace,
+  notify,
+  updatePendingCount,
+}: {
+  tasks: CareTask[]
+  patient: Patient
+  user: ApiUser
+  locale: string
+  vitals: VitalRecord[]
+  session: Session | null
+  onTask: (task: CareTask) => void
+  onComplete: (task: CareTask) => void
+  onAdd: () => void
+  onNavigate: (view: View) => void
+  onRefreshWorkspace?: () => Promise<void> | void
+  notify?: (message: string) => void
+  updatePendingCount?: () => Promise<void> | void
+}) {
   const complete = tasks.filter((task) => task.status === 'done').length
   const now = tasks.find((task) => task.status === 'now')
   const overdue = tasks.filter((task) => task.status === 'overdue')
@@ -913,6 +1006,174 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
   const todayLabel = new Intl.DateTimeFormat(isPersian ? 'fa-IR-u-ca-persian' : 'en', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()).toUpperCase()
   const hour = new Date().getHours()
   const greeting = isPersian ? (hour < 12 ? 'صبح بخیر' : hour < 18 ? 'عصر بخیر' : 'شب بخیر') : (hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening')
+
+  const [quickTemplates, setQuickTemplates] = useState<AdHocQuickTemplate[]>([])
+  const [loggingTemplateId, setLoggingTemplateId] = useState<number | null>(null)
+  const [successTemplateId, setSuccessTemplateId] = useState<number | null>(null)
+  const [undoToast, setUndoToast] = useState<{
+    id: string
+    occurrenceId?: number
+    title: string
+    clientReference: string
+    templateId: number
+    startTime: number
+    duration: number
+  } | null>(null)
+  const [toastProgress, setToastProgress] = useState(100)
+  const [adHocModalOpen, setAdHocModalOpen] = useState(false)
+  const [adHocTitle, setAdHocTitle] = useState('')
+  const [adHocNote, setAdHocNote] = useState('')
+  const [adHocCategory, setAdHocCategory] = useState<TaskTemplate['category']>('PERSONAL_CARE')
+  const [adHocSubmitting, setAdHocSubmitting] = useState(false)
+
+  const loadQuickTemplates = useCallback(async () => {
+    if (!session) return
+    try {
+      if (navigator.onLine) {
+        const templates = await getAdHocTemplates(session.token, patient.id)
+        setQuickTemplates(templates)
+        await cacheQuickTemplates(templates, session.user.id, patient.id)
+      } else {
+        const cached = await readCachedQuickTemplates(session.user.id, patient.id)
+        setQuickTemplates(cached)
+      }
+    } catch {
+      const cached = await readCachedQuickTemplates(session.user.id, patient.id)
+      setQuickTemplates(cached)
+    }
+  }, [session, patient.id])
+
+  useEffect(() => {
+    loadQuickTemplates()
+  }, [loadQuickTemplates])
+
+  useEffect(() => {
+    if (!undoToast) {
+      setToastProgress(100)
+      return
+    }
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - undoToast.startTime
+      const remaining = Math.max(0, 100 - (elapsed / undoToast.duration) * 100)
+      setToastProgress(remaining)
+      if (remaining <= 0) {
+        clearInterval(interval)
+        setUndoToast(null)
+      }
+    }, 50)
+    return () => clearInterval(interval)
+  }, [undoToast])
+
+  const handleQuickAction = async (template: AdHocQuickTemplate) => {
+    if (!session || loggingTemplateId !== null) return
+    setLoggingTemplateId(template.id)
+
+    // Optimistic count update
+    setQuickTemplates((current) =>
+      current.map((item) =>
+        item.id === template.id ? { ...item, today_count: (item.today_count || 0) + 1 } : item,
+      ),
+    )
+
+    // Visual feedback
+    setSuccessTemplateId(template.id)
+    setTimeout(() => {
+      setSuccessTemplateId((curr) => (curr === template.id ? null : curr))
+    }, 1200)
+
+    const clientReference = crypto.randomUUID()
+    try {
+      const result = await quickLogAdHocAction(
+        session.token,
+        session.user.id,
+        template.id,
+        patient.id,
+        template.default_note || '',
+        clientReference,
+      )
+      if (updatePendingCount) await updatePendingCount()
+
+      setUndoToast({
+        id: clientReference,
+        occurrenceId: result.data?.id,
+        title: template.title,
+        clientReference,
+        templateId: template.id,
+        startTime: Date.now(),
+        duration: 5000,
+      })
+    } catch (error) {
+      setQuickTemplates((current) =>
+        current.map((item) =>
+          item.id === template.id ? { ...item, today_count: Math.max(0, (item.today_count || 0) - 1) } : item,
+        ),
+      )
+      if (notify) notify(error instanceof Error ? error.message : 'Action could not be logged')
+    } finally {
+      setLoggingTemplateId(null)
+    }
+  }
+
+  const handleUndo = async () => {
+    if (!undoToast || !session) return
+    const { clientReference, occurrenceId, templateId } = undoToast
+    setUndoToast(null)
+
+    // Decrement count
+    setQuickTemplates((current) =>
+      current.map((item) =>
+        item.id === templateId ? { ...item, today_count: Math.max(0, (item.today_count || 0) - 1) } : item,
+      ),
+    )
+
+    // Offline undo: cancel/remove the pending mutation directly from IndexedDB
+    if (!navigator.onLine || !occurrenceId) {
+      try {
+        await removeMutation(clientReference)
+        if (updatePendingCount) await updatePendingCount()
+        if (notify) notify(isPersian ? 'اقدام مراقبتی بازگردانده شد' : 'Care action undone')
+      } catch (err) {
+        console.error('Failed to remove offline mutation:', err)
+      }
+      return
+    }
+
+    // Online undo: call endpoint
+    try {
+      await undoQuickLogAction(session.token, occurrenceId)
+      if (notify) notify(isPersian ? 'اقدام مراقبتی بازگردانده شد' : 'Care action undone')
+      if (onRefreshWorkspace) await onRefreshWorkspace()
+      await loadQuickTemplates()
+    } catch (err) {
+      if (notify) notify(err instanceof Error ? err.message : 'Undo failed')
+    }
+  }
+
+  const submitCustomAdHoc = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!adHocTitle.trim() || !session) return
+    setAdHocSubmitting(true)
+    try {
+      await createAdHocTask(session.token, {
+        patient: patient.id,
+        title: adHocTitle.trim(),
+        category: adHocCategory,
+        note: adHocNote.trim(),
+        outcome: 'COMPLETED',
+      })
+      setAdHocTitle('')
+      setAdHocNote('')
+      setAdHocModalOpen(false)
+      if (notify) notify(isPersian ? 'اقدام مراقبتی ثبت شد' : 'Care action logged')
+      if (onRefreshWorkspace) await onRefreshWorkspace()
+      await loadQuickTemplates()
+    } catch (err) {
+      if (notify) notify(err instanceof Error ? err.message : 'Could not log care action')
+    } finally {
+      setAdHocSubmitting(false)
+    }
+  }
+
   const copy = isPersian ? {
     needsToday: `${patient.first_name} امروز به این موارد نیاز دارد.`, addTask: 'افزودن وظیفه', activePlan: 'برنامه مراقبتی فعال', inactivePlan: 'برنامه مراقبتی غیرفعال',
     yearsOld: `${patient.age} ساله`, room: patient.room ? ` · اتاق ${patient.room}` : '', bloodPressure: 'فشار خون', oxygen: 'اکسیژن', temperature: 'دما',
@@ -922,6 +1183,7 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
     shiftOverview: 'نمای کلی شیفت', complete: 'انجام شده', upcoming: 'در پیش', handover: 'تحویل شیفت', handoverTitle: 'برای تحویل ایمن شیفت آماده‌اید؟',
     handoverText: 'وظیفه بعدی و سابقه تأییدها را بررسی کنید.', reports: 'باز کردن گزارش‌های شیفت', careCircle: 'حلقه مراقبت بیمار', contacts: 'مخاطبان مجاز',
     contactsText: 'از پرونده بالینی بارگذاری شده', familyText: 'گفت‌وگوی ویژه بیمار را باز کنید یا مخاطبان مجاز خانواده را بررسی کنید.', messages: 'باز کردن پیام‌ها',
+    quickCare: 'اقدامات سریع و پرتکرار', quickCareDesc: 'مراقبت‌های استاندارد بدون برنامه', customAction: 'اقدام مراقبتی سفارشی', undo: 'لغو / بازگردانی',
   } : {
     needsToday: `Here's what ${patient.first_name} needs today.`, addTask: 'Add task', activePlan: 'Active care plan', inactivePlan: 'Care plan inactive',
     yearsOld: `${patient.age} years old`, room: patient.room ? ` · Room ${patient.room}` : '', bloodPressure: 'Blood pressure', oxygen: 'Oxygen', temperature: 'Temperature',
@@ -930,7 +1192,9 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
     shiftOverview: 'Shift overview', complete: 'complete', upcoming: 'upcoming', handover: 'SHIFT HANDOVER', handoverTitle: 'Ready for a safe handover?',
     handoverText: 'Review the actual next assignment and acknowledgement history.', reports: 'Open shift reports', careCircle: 'PATIENT CARE CIRCLE', contacts: 'Authorized contacts',
     contactsText: 'Loaded from the clinical record', familyText: 'Open the patient-specific conversation or review authorized family contacts.', messages: 'Open messages',
+    quickCare: 'Quick Care Actions', quickCareDesc: 'Standardized unscheduled care', customAction: 'Custom care action', undo: 'Undo',
   }
+
   return (
     <>
       <section className="welcome-row">
@@ -950,29 +1214,125 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
 
       <div className="dashboard-grid">
         <section className="timeline-column">
-          <div className="section-title"><div><h2>{copy.todaysCare}</h2><p>{copy.completeOf}</p></div><div className="progress-ring" style={{ '--progress': `${progress * 3.6}deg` } as CSSProperties}><span>{progress}%</span></div></div>
-          {now && <div className="focus-card now-card">
-            <div className="focus-label"><span><Clock3 size={15} /> {copy.doNow}</span><strong>{now.time}</strong></div>
-            <div className="focus-body"><TaskIcon task={now} large /><div className="focus-copy"><h3>{now.title}</h3><strong>{now.detail}</strong><p>{now.instructions}</p></div></div>
-            <div className="focus-actions"><button className="complete-button" onClick={() => onComplete(now)}><Check size={20} /> {copy.markDone}</button><button className="secondary-button" onClick={() => onTask(now)}>{copy.details}</button></div>
-          </div>}
-          {overdue.map((task) => <button className="overdue-card" key={task.id} onClick={() => onTask(task)}><span className="overdue-icon"><AlertCircle /></span><span className="overdue-copy"><span className="overdue-meta"><span>{copy.overdue}</span><time dir="ltr">{task.time}</time></span><strong><bdi>{task.title}</bdi></strong><em><bdi>{task.detail}</bdi></em></span><ChevronRight /></button>)}
-          <div className="up-next">
-            <div className="subsection-heading">
-              <h3>{copy.upNext}</h3>
-              <button
-                type="button"
-                className="schedule-pill-button"
-                onClick={() => onNavigate('schedule')}
-                aria-label={copy.viewSchedule}
-              >
-                <CalendarDays size={14} className="schedule-pill-icon" aria-hidden="true" />
-                <span>{copy.viewSchedule}</span>
-                <ChevronRight size={14} className="schedule-pill-arrow" aria-hidden="true" />
-              </button>
+          {/* Mobile Quick Actions Carousel (< 768px) */}
+          {quickTemplates.length > 0 && (
+            <nav className="quick-actions-mobile-carousel" aria-label={copy.quickCare}>
+              {quickTemplates.map((template) => {
+                const isLogging = loggingTemplateId === template.id
+                const isSuccess = successTemplateId === template.id
+                return (
+                  <div key={template.id} className="quick-action-carousel-item">
+                    <button
+                      type="button"
+                      className={`quick-action-btn ${isLogging ? 'logging' : ''} ${isSuccess ? 'success-flash' : ''}`}
+                      disabled={isLogging}
+                      onClick={() => handleQuickAction(template)}
+                      aria-label={`${template.title}, ${formatCount(template.today_count || 0, locale)}`}
+                    >
+                      <span className="quick-action-btn-main">
+                        <span className="quick-action-btn-icon">
+                          {isSuccess ? <Check size={16} /> : renderActionIcon(template.icon, 16)}
+                        </span>
+                        <span className="quick-action-title">{template.title}</span>
+                      </span>
+                      {(template.today_count || 0) > 0 && (
+                        <span className="quick-action-count">{formatCount(template.today_count || 0, locale)}</span>
+                      )}
+                    </button>
+                  </div>
+                )
+              })}
+              {canManageTasks && (
+                <div className="quick-action-carousel-custom">
+                  <button
+                    type="button"
+                    className="custom-ad-hoc-btn"
+                    onClick={() => setAdHocModalOpen(true)}
+                  >
+                    <Zap size={14} /> {isPersian ? 'سفارشی' : 'Custom'}
+                  </button>
+                </div>
+              )}
+            </nav>
+          )}
+
+          <div className="today-dual-columns">
+            {/* Primary Column: Scheduled Care */}
+            <div className="scheduled-care-column">
+              <div className="section-title"><div><h2>{copy.todaysCare}</h2><p>{copy.completeOf}</p></div><div className="progress-ring" style={{ '--progress': `${progress * 3.6}deg` } as CSSProperties}><span>{progress}%</span></div></div>
+              {now && <div className="focus-card now-card">
+                <div className="focus-label"><span><Clock3 size={15} /> {copy.doNow}</span><strong>{now.time}</strong></div>
+                <div className="focus-body"><TaskIcon task={now} large /><div className="focus-copy"><h3>{now.title}</h3><strong>{now.detail}</strong><p>{now.instructions}</p></div></div>
+                <div className="focus-actions"><button className="complete-button" onClick={() => onComplete(now)}><Check size={20} /> {copy.markDone}</button><button className="secondary-button" onClick={() => onTask(now)}>{copy.details}</button></div>
+              </div>}
+              {overdue.map((task) => <button className="overdue-card" key={task.id} onClick={() => onTask(task)}><span className="overdue-icon"><AlertCircle /></span><span className="overdue-copy"><span className="overdue-meta"><span>{copy.overdue}</span><time dir="ltr">{task.time}</time></span><strong><bdi>{task.title}</bdi></strong><em><bdi>{task.detail}</bdi></em></span><ChevronRight /></button>)}
+              <div className="up-next">
+                <div className="subsection-heading">
+                  <h3>{copy.upNext}</h3>
+                  <button
+                    type="button"
+                    className="schedule-pill-button"
+                    onClick={() => onNavigate('schedule')}
+                    aria-label={copy.viewSchedule}
+                  >
+                    <CalendarDays size={14} className="schedule-pill-icon" aria-hidden="true" />
+                    <span>{copy.viewSchedule}</span>
+                    <ChevronRight size={14} className="schedule-pill-arrow" aria-hidden="true" />
+                  </button>
+                </div>
+                {upcoming.map((task) => <TaskRow key={task.id} task={task} onClick={() => onTask(task)} />)}
+                {!tasks.length && <div className="empty-care"><CheckCircle2 /><strong>{copy.noTasks}</strong><p>{copy.noTasksText}</p></div>}
+              </div>
             </div>
-            {upcoming.map((task) => <TaskRow key={task.id} task={task} onClick={() => onTask(task)} />)}
-            {!tasks.length && <div className="empty-care"><CheckCircle2 /><strong>{copy.noTasks}</strong><p>{copy.noTasksText}</p></div>}
+
+            {/* Secondary Column: Pinned Quick Actions (>= 768px) */}
+            <div className="quick-actions-column">
+              <div className="quick-actions-card">
+                <div className="quick-actions-header">
+                  <div>
+                    <h3><Sparkles size={16} /> {copy.quickCare}</h3>
+                    <p>{copy.quickCareDesc}</p>
+                  </div>
+                </div>
+
+                <div className="quick-actions-list">
+                  {quickTemplates.map((template) => {
+                    const isLogging = loggingTemplateId === template.id
+                    const isSuccess = successTemplateId === template.id
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        className={`quick-action-btn ${isLogging ? 'logging' : ''} ${isSuccess ? 'success-flash' : ''}`}
+                        disabled={isLogging}
+                        onClick={() => handleQuickAction(template)}
+                        aria-label={`${template.title}, ${formatCount(template.today_count || 0, locale)}`}
+                      >
+                        <span className="quick-action-btn-main">
+                          <span className="quick-action-btn-icon">
+                            {isSuccess ? <Check size={18} /> : renderActionIcon(template.icon, 18)}
+                          </span>
+                          <span className="quick-action-title">{template.title}</span>
+                        </span>
+                        {(template.today_count || 0) > 0 && (
+                          <span className="quick-action-count">{formatCount(template.today_count || 0, locale)}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {canManageTasks && (
+                  <button
+                    type="button"
+                    className="custom-ad-hoc-btn"
+                    onClick={() => setAdHocModalOpen(true)}
+                  >
+                    <Zap size={16} /> {copy.customAction}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -982,6 +1342,101 @@ function Dashboard({ tasks, patient, user, locale, vitals, onTask, onComplete, o
           <div className="side-card family-card"><div className="family-head"><div className="avatar avatar-layla"><MessageCircle size={18} /></div><div><small>{copy.careCircle}</small><strong>{copy.contacts}</strong><span>{copy.contactsText}</span></div></div><p>{copy.familyText}</p><button onClick={() => onNavigate('messages')}>{copy.messages} <ChevronRight size={16} /></button></div>
         </aside>
       </div>
+
+      {/* Ephemeral Undo Toast */}
+      {undoToast && (
+        <div className="undo-toast-container" role="status" aria-live="polite">
+          <div className="undo-toast">
+            <div className="undo-toast-body">
+              <div className="undo-toast-message">
+                <CheckCircle2 size={18} />
+                <span>{isPersian ? `ثبت شد: ${undoToast.title}` : `Logged: ${undoToast.title}`}</span>
+              </div>
+              <div className="undo-toast-actions">
+                <button type="button" className="undo-btn" onClick={handleUndo}>
+                  <RotateCcw size={14} />
+                  <span>{copy.undo}</span>
+                </button>
+                <button
+                  type="button"
+                  className="undo-dismiss-btn"
+                  onClick={() => setUndoToast(null)}
+                  aria-label={isPersian ? 'بستن' : 'Dismiss'}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="undo-progress-bar">
+              <div className="undo-progress-fill" style={{ width: `${toastProgress}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Care Action Modal */}
+      {adHocModalOpen && (
+        <Modal onClose={() => setAdHocModalOpen(false)} label={copy.customAction} locale={locale}>
+          <header className="builder-header">
+            <span className="eyebrow">{isPersian ? 'اقدام مراقبتی جدید' : 'UNSCHEDULED CARE'}</span>
+            <h2>{isPersian ? 'ثبت اقدام مراقبتی سفارشی' : 'Record custom care action'}</h2>
+            <p>{isPersian ? `اقدام بدون برنامه برای ${patient.full_name}` : `Log unscheduled care for ${patient.full_name}`}</p>
+          </header>
+          <form onSubmit={submitCustomAdHoc} className="task-form">
+            <label>
+              {isPersian ? 'عنوان اقدام' : 'Action title'}
+              <input
+                autoFocus
+                required
+                value={adHocTitle}
+                onChange={(e) => setAdHocTitle(e.target.value)}
+                placeholder={isPersian ? 'مثال: آبمیوه، کمک به پیاده‌روی' : 'e.g. Snack / Juice, Walk assistance'}
+              />
+            </label>
+            <div className="form-row">
+              <label>
+                {isPersian ? 'دسته‌بندی' : 'Category'}
+                <select
+                  value={adHocCategory}
+                  onChange={(e) => setAdHocCategory(e.target.value as TaskTemplate['category'])}
+                >
+                  <option value="PERSONAL_CARE">{isPersian ? 'مراقبت شخصی' : 'Personal care'}</option>
+                  <option value="HEALTH">{isPersian ? 'بررسی سلامت' : 'Health check'}</option>
+                  <option value="MEAL">{isPersian ? 'وعده یا میان‌وعده' : 'Meal / Snack'}</option>
+                  <option value="ACTIVITY">{isPersian ? 'فعالیت' : 'Activity'}</option>
+                  <option value="MEDICATION">{isPersian ? 'پشتیبانی دارو' : 'Medication support'}</option>
+                  <option value="OTHER">{isPersian ? 'سایر' : 'Other'}</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              {isPersian ? 'توضیحات یا یادداشت (اختیاری)' : 'Clinical note (optional)'}
+              <textarea
+                value={adHocNote}
+                onChange={(e) => setAdHocNote(e.target.value)}
+                placeholder={isPersian ? 'جزئیات مراقبت انجام‌شده را بنویسید...' : 'Add details about the care provided...'}
+              />
+            </label>
+            <footer className="builder-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setAdHocModalOpen(false)}
+              >
+                {isPersian ? 'انصراف' : 'Cancel'}
+              </button>
+              <span />
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={adHocSubmitting || !adHocTitle.trim()}
+              >
+                <Check size={18} /> {adHocSubmitting ? (isPersian ? 'در حال ثبت…' : 'Logging…') : (isPersian ? 'ثبت اقدام' : 'Log care action')}
+              </button>
+            </footer>
+          </form>
+        </Modal>
+      )}
     </>
   )
 }

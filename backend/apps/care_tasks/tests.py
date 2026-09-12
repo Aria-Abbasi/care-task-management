@@ -15,7 +15,7 @@ from apps.reports.models import ShiftReport
 from apps.safety.models import AuditEvent, CareNotification, EscalationPolicy, EscalationStep, NotificationDelivery
 from apps.safety.services import scan_overdue_alerts
 
-from .models import CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import AdHocTemplate, CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
 from .services import generate_occurrences_for_date, mark_overdue_occurrences
 
 
@@ -994,3 +994,244 @@ class CareApiTests(APITestCase):
         self.assertEqual(resp_patient_action.status_code, status.HTTP_200_OK)
         self.assertEqual(resp_patient_action.data["time_window"], "MORNING")
         self.assertIn("suggestions", resp_patient_action.data)
+
+
+class AdHocTemplateTests(APITestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name="Haven Quick Care", slug="haven-quick-care", timezone=str(timezone.get_current_timezone())
+        )
+        self.admin = User.objects.create_user(
+            username="admin_user",
+            email="admin@example.com",
+            password="safe-password",
+            role=User.Role.ADMIN,
+            organization=self.organization,
+        )
+        self.doctor = User.objects.create_user(
+            username="doctor_user",
+            email="doctor@example.com",
+            password="safe-password",
+            role=User.Role.DOCTOR,
+            organization=self.organization,
+        )
+        self.caregiver = User.objects.create_user(
+            username="caregiver_user",
+            email="caregiver@example.com",
+            password="safe-password",
+            role=User.Role.CAREGIVER,
+            organization=self.organization,
+        )
+        self.other_caregiver = User.objects.create_user(
+            username="other_caregiver",
+            email="other@example.com",
+            password="safe-password",
+            role=User.Role.CAREGIVER,
+            organization=self.organization,
+        )
+        self.family = User.objects.create_user(
+            username="family_user",
+            email="family@example.com",
+            password="safe-password",
+            role=User.Role.FAMILY,
+            organization=self.organization,
+        )
+        self.patient = Patient.objects.create(
+            first_name="Mary",
+            last_name="Smith",
+            birth_date=date(1955, 4, 12),
+            gender=Patient.Gender.FEMALE,
+            organization=self.organization,
+        )
+        CareAssignment.objects.create(user=self.caregiver, patient=self.patient, relationship="CAREGIVER")
+        CareAssignment.objects.create(user=self.other_caregiver, patient=self.patient, relationship="CAREGIVER")
+        CareAssignment.objects.create(user=self.doctor, patient=self.patient, relationship="DOCTOR")
+        CareAssignment.objects.create(user=self.family, patient=self.patient, relationship="FAMILY")
+
+    def test_ad_hoc_template_crud_and_permissions(self):
+        # Caregiver cannot create template
+        self.client.force_authenticate(user=self.caregiver)
+        res_cg_create = self.client.post(
+            "/api/v1/ad-hoc-templates/",
+            {
+                "title": "Water Intake",
+                "category": Task.Category.HEALTH,
+                "icon": "Droplets",
+            },
+        )
+        self.assertEqual(res_cg_create.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Admin can create template
+        self.client.force_authenticate(user=self.admin)
+        res_admin_create = self.client.post(
+            "/api/v1/ad-hoc-templates/",
+            {
+                "title": "Water Intake",
+                "category": Task.Category.HEALTH,
+                "icon": "Droplets",
+                "color": "blue",
+                "default_note": "Offered water",
+                "sort_order": 1,
+            },
+        )
+        self.assertEqual(res_admin_create.status_code, status.HTTP_201_CREATED)
+        template_id = res_admin_create.data["id"]
+
+        # Doctor can update template
+        self.client.force_authenticate(user=self.doctor)
+        res_doc_update = self.client.patch(
+            f"/api/v1/ad-hoc-templates/{template_id}/",
+            {
+                "default_note": "Offered 250ml water",
+            },
+        )
+        self.assertEqual(res_doc_update.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_doc_update.data["default_note"], "Offered 250ml water")
+
+        # Caregiver can list templates
+        self.client.force_authenticate(user=self.caregiver)
+        res_cg_list = self.client.get(f"/api/v1/ad-hoc-templates/?patient={self.patient.id}")
+        self.assertEqual(res_cg_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_cg_list.data["results"]), 1)
+
+        # Admin can soft-delete template
+        self.client.force_authenticate(user=self.admin)
+        res_del = self.client.delete(f"/api/v1/ad-hoc-templates/{template_id}/")
+        self.assertEqual(res_del.status_code, status.HTTP_204_NO_CONTENT)
+        tpl = AdHocTemplate.objects.get(pk=template_id)
+        self.assertFalse(tpl.active)
+
+    def test_atomic_quick_log_deduplication_and_idempotency(self):
+        template = AdHocTemplate.objects.create(
+            organization=self.organization,
+            title="Hydration / Drinking Water",
+            category=Task.Category.HEALTH,
+            icon="Droplets",
+            default_note="Offered water",
+            sort_order=1,
+            active=True,
+        )
+
+        self.client.force_authenticate(user=self.caregiver)
+        ref1 = str(uuid4())
+
+        # First tap
+        res1 = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+                "client_reference": ref1,
+                "note": "Drank full glass",
+            },
+        )
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+        occ1_id = res1.data["id"]
+        self.assertEqual(res1.data["status"], TaskOccurrence.Status.DONE)
+        self.assertEqual(res1.data["outcome"], "COMPLETED")
+
+        # Canonical task de-duplication check: exactly 1 Task created
+        self.assertEqual(Task.objects.filter(patient=self.patient, schedule_type=Task.ScheduleType.ON_DEMAND).count(), 1)
+        canonical_task = Task.objects.get(patient=self.patient, schedule_type=Task.ScheduleType.ON_DEMAND)
+        self.assertEqual(canonical_task.title, "Hydration / Drinking Water")
+
+        # Second tap (different event)
+        ref2 = str(uuid4())
+        res2 = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+                "client_reference": ref2,
+            },
+        )
+        self.assertEqual(res2.status_code, status.HTTP_201_CREATED)
+        occ2_id = res2.data["id"]
+        self.assertNotEqual(occ1_id, occ2_id)
+
+        # Still only 1 Task definition (no fragmented templates!)
+        self.assertEqual(Task.objects.filter(patient=self.patient, schedule_type=Task.ScheduleType.ON_DEMAND).count(), 1)
+        # But 2 occurrences
+        self.assertEqual(TaskOccurrence.objects.filter(task=canonical_task).count(), 2)
+
+        # Idempotency check: replay ref1
+        res_replay = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient_id": self.patient.id,
+                "client_reference": ref1,
+            },
+        )
+        self.assertEqual(res_replay.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_replay.data["id"], occ1_id)
+        self.assertEqual(TaskOccurrence.objects.filter(task=canonical_task).count(), 2)
+
+        # Check today_count in list endpoint
+        res_list = self.client.get(f"/api/v1/ad-hoc-templates/?patient={self.patient.id}")
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_list.data["results"][0]["today_count"], 2)
+
+    def test_append_only_undo_and_today_count(self):
+        template = AdHocTemplate.objects.create(
+            organization=self.organization,
+            title="Repositioning",
+            category=Task.Category.PERSONAL_CARE,
+            icon="RotateCw",
+            sort_order=1,
+            active=True,
+        )
+        self.client.force_authenticate(user=self.caregiver)
+        res_log = self.client.post(
+            f"/api/v1/ad-hoc-templates/{template.id}/log/",
+            {
+                "patient": self.patient.id,
+            },
+        )
+        self.assertEqual(res_log.status_code, status.HTTP_201_CREATED)
+        occ_id = res_log.data["id"]
+
+        # Other caregiver cannot undo
+        self.client.force_authenticate(user=self.other_caregiver)
+        res_unauthorized_undo = self.client.post(f"/api/v1/occurrences/{occ_id}/undo/")
+        self.assertEqual(res_unauthorized_undo.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Authoring caregiver undoes within grace window
+        self.client.force_authenticate(user=self.caregiver)
+        res_undo = self.client.post(f"/api/v1/occurrences/{occ_id}/undo/")
+        self.assertEqual(res_undo.status_code, status.HTTP_200_OK)
+
+        # Verify append-only: occurrence still exists in database!
+        occ = TaskOccurrence.objects.get(pk=occ_id)
+        self.assertEqual(occ.status, TaskOccurrence.Status.SKIPPED)
+        self.assertIn("Undone by", occ.completion.note)
+
+        # Verify audit event
+        audit_exists = AuditEvent.objects.filter(
+            action="TASK_QUICK_LOG_UNDONE",
+            entity_id=str(occ_id),
+        ).exists()
+        self.assertTrue(audit_exists)
+
+        # Verify today_count dropped back to 0
+        res_list = self.client.get(f"/api/v1/ad-hoc-templates/?patient={self.patient.id}")
+        self.assertEqual(res_list.data["results"][0]["today_count"], 0)
+
+    def test_generic_occurrences_quick_log(self):
+        template = AdHocTemplate.objects.create(
+            organization=self.organization,
+            title="Assisted Walk",
+            category=Task.Category.ACTIVITY,
+            icon="Footprints",
+            sort_order=1,
+            active=True,
+        )
+        self.client.force_authenticate(user=self.caregiver)
+        res = self.client.post(
+            "/api/v1/occurrences/quick-log/",
+            {
+                "template_id": template.id,
+                "patient_id": self.patient.id,
+                "note": "10 minute walk",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["task_detail"]["title"], "Assisted Walk")
+        self.assertEqual(res.data["status"], TaskOccurrence.Status.DONE)

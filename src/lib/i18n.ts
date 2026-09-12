@@ -39,6 +39,17 @@ const english = {
     timingWindow: (minutes: number) => `${minutes}-minute window`,
     timingAcknowledgement: (minutes: number) => `I confirm this dose is being recorded outside the ${minutes}-minute window and the scheduled time will remain unchanged.`,
   },
+  quickActions: {
+    title: 'Quick Care Actions',
+    subtitle: 'Standardized unscheduled care',
+    customAction: 'Custom care action',
+    actionLogged: (title: string) => `Logged: ${title}`,
+    undo: 'Undo',
+    undone: 'Care action undone',
+    countBadge: (count: number) => `· ${count}×`,
+    dismiss: 'Dismiss',
+    pinAsQuickAction: 'Save as Pinned Quick Action on Today Dashboard',
+  },
 } as const
 
 const persian: TranslateShape<typeof english> = {
@@ -72,6 +83,17 @@ const persian: TranslateShape<typeof english> = {
     timingWindow: (minutes) => `بازه ${new Intl.NumberFormat('fa-IR').format(minutes)} دقیقه‌ای`,
     timingAcknowledgement: (minutes) => `تأیید می‌کنم دوز خارج از بازه ${new Intl.NumberFormat('fa-IR').format(minutes)} دقیقه‌ای ثبت می‌شود و زمان برنامه‌ریزی‌شده تغییر نخواهد کرد.`,
   },
+  quickActions: {
+    title: 'اقدامات سریع و پرتکرار',
+    subtitle: 'مراقبت‌های استاندارد بدون برنامه',
+    customAction: 'اقدام مراقبتی سفارشی',
+    actionLogged: (title) => `ثبت شد: ${title}`,
+    undo: 'لغو / بازگردانی',
+    undone: 'اقدام مراقبتی بازگردانده شد',
+    countBadge: (count) => `· ${new Intl.NumberFormat('fa-IR').format(count)}×`,
+    dismiss: 'بستن',
+    pinAsQuickAction: 'ذخیره به عنوان اقدام سریع در صفحه امروز',
+  },
 }
 
 export const productCopy = { en: english, fa: persian } as const
@@ -88,3 +110,11 @@ export function localizedFallback(locale: string, error: unknown, englishFallbac
   if (locale !== 'fa') return error instanceof Error ? error.message : englishFallback
   return persianFallback
 }
+
+export function formatCount(count: number, locale: string): string {
+  if (locale === 'fa') {
+    return `· ${new Intl.NumberFormat('fa-IR').format(count)}×`
+  }
+  return `· ${count}×`
+}
+

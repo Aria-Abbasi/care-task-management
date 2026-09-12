@@ -5,14 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushMutationQueue } from './api'
 import {
   cacheDashboard,
+  cacheQuickTemplates,
   clearOfflineData,
   listMutations,
   pendingMutationCount,
   queueMutation,
   readCachedDashboard,
+  readCachedQuickTemplates,
+  removeMutation,
   retryMutation,
 } from './offline'
-import type { DashboardResponse } from './types'
+import type { AdHocQuickTemplate, DashboardResponse } from './types'
 
 
 afterEach(async () => {
@@ -128,5 +131,58 @@ describe('offline care queue', () => {
     const retried = (await listMutations(1))[0]
     expect(retried.status).toBe('pending')
     expect(retried.body).toMatchObject({ expected_version: 2 })
+  })
+
+  it('caches and retrieves quick templates per user and patient', async () => {
+    const sampleTemplates: AdHocQuickTemplate[] = [
+      {
+        id: 1,
+        title: 'Hydration / Drinking Water',
+        category: 'HEALTH',
+        icon: 'Droplets',
+        is_quick_action: true,
+        today_count: 2,
+        active: true,
+      },
+      {
+        id: 2,
+        title: 'Assisted Walk',
+        category: 'ACTIVITY',
+        icon: 'Footprints',
+        is_quick_action: true,
+        today_count: 0,
+        active: true,
+      },
+    ]
+
+    await cacheQuickTemplates(sampleTemplates, 1, 42)
+    const cached = await readCachedQuickTemplates(1, 42)
+    expect(cached).toHaveLength(2)
+    expect(cached[0].title).toBe('Hydration / Drinking Water')
+
+    // Isolation by user or patient
+    const otherUser = await readCachedQuickTemplates(2, 42)
+    expect(otherUser).toHaveLength(0)
+    const otherPatient = await readCachedQuickTemplates(1, 99)
+    expect(otherPatient).toHaveLength(0)
+  })
+
+  it('cancels offline quick actions by removing mutation from queue on undo', async () => {
+    const clientRef = 'offline-action-uuid-1'
+    await queueMutation({
+      id: clientRef,
+      userId: 1,
+      path: '/ad-hoc-templates/1/log/',
+      method: 'POST',
+      body: { patient_id: 42, note: 'Hydration', client_reference: clientRef },
+      createdAt: new Date().toISOString(),
+      attempts: 0,
+      status: 'pending',
+    })
+
+    expect(await pendingMutationCount(1)).toBe(1)
+    // Offline undo: remove directly from the queue
+    await removeMutation(clientRef)
+    expect(await pendingMutationCount(1)).toBe(0)
   })
 })

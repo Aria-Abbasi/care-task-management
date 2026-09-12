@@ -100,6 +100,29 @@ class CareTaskTemplate(TimeStampedModel):
         return f"{self.organization}: {self.name}"
 
 
+class AdHocTemplate(TimeStampedModel):
+    """Standardized quick-action care templates for one-tap ad-hoc logging."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="ad_hoc_templates")
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, null=True, blank=True, related_name="ad_hoc_templates")
+    title = models.CharField(max_length=120)
+    category = models.CharField(max_length=24, choices=Task.Category.choices, default=Task.Category.PERSONAL_CARE)
+    icon = models.CharField(max_length=64, default="Sparkles")
+    color = models.CharField(max_length=64, blank=True, default="")
+    is_quick_action = models.BooleanField(default=True, db_index=True)
+    default_note = models.TextField(blank=True)
+    sort_order = models.IntegerField(default=0)
+    active = models.BooleanField(default=True, db_index=True)
+    client_reference = models.UUIDField(null=True, blank=True, unique=True, help_text="Idempotency key for offline sync")
+
+    class Meta:
+        ordering = ["sort_order", "title"]
+
+    def __str__(self):
+        scope = f" ({self.patient})" if self.patient else " (Facility-wide)"
+        return f"{self.title}{scope}"
+
+
 class TaskOccurrence(TimeStampedModel):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
@@ -110,6 +133,7 @@ class TaskOccurrence(TimeStampedModel):
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="occurrences")
     schedule = models.ForeignKey(TaskSchedule, on_delete=models.SET_NULL, null=True, blank=True, related_name="occurrences")
+    ad_hoc_template = models.ForeignKey(AdHocTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name="occurrences")
     scheduled_at = models.DateTimeField(db_index=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
     completed_at = models.DateTimeField(null=True, blank=True)

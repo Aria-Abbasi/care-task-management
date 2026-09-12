@@ -137,22 +137,24 @@ function FieldHint({ children }: { children: ReactNode }) {
   return <small className="field-hint">{children}</small>
 }
 
-export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate, locale = 'en' }: {
+export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate, locale = 'en', initialStep = 0, initialFrequency = 'DAILY' }: {
   patient: Patient
   token: string
   existingTitles: string[]
   onClose: () => void
   onCreate: (draft: TaskCreationDraft) => void | Promise<void>
   locale?: string
+  initialStep?: number
+  initialFrequency?: BuilderFrequency
 }) {
   const fa = locale === 'fa'
   const text = fa ? { eyebrow: 'فعالیت مراقبتی جدید', title: 'ایجاد وظیفه', intro: 'یک فعالیت مراقبتی ایمن و شفاف برای', steps: ['وظیفه', 'زمان‌بندی', 'جزئیات مراقبت', 'بازبینی'], details: 'جزئیات وظیفه', template: 'شروع از الگوی مراقبتی', blank: 'وظیفه خالی', organization: 'سازمان شما', defaults: 'الگوهای پیش‌فرض Haven', name: 'نام وظیفه', nameHint: 'یک اقدام روشن بنویسید؛ مانند کمک برای دوش گرفتن', category: 'دسته‌بندی', priority: 'اولویت', personal: 'مراقبت شخصی', health: 'بررسی سلامت', meal: 'وعده غذایی', activity: 'فعالیت', medication: 'پشتیبانی دارو', other: 'سایر', low: 'کم', normal: 'معمولی', high: 'زیاد', urgent: 'فوری', medicationBoundary: 'محدوده ایمنی دارو', include: 'مواردی که باید اضافه شود' } : { eyebrow: 'NEW CARE ACTIVITY', title: 'Create a task', intro: 'Build a safe, unambiguous care activity for', steps: ['Task', 'Schedule', 'Care details', 'Review'], details: 'Task details', template: 'Start from a care template', blank: 'Blank task', organization: 'Your organization', defaults: 'Haven defaults', name: 'Task name', nameHint: 'Use a clear action, such as Assisted shower', category: 'Category', priority: 'Priority', personal: 'Personal care', health: 'Health check', meal: 'Meal', activity: 'Activity', medication: 'Medication support', other: 'Other', low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent', medicationBoundary: 'Medication safety boundary', include: 'What to include' }
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(initialStep)
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState<TaskCategory>('PERSONAL_CARE')
   const [priority, setPriority] = useState<TaskPriority>('NORMAL')
   const [assignedTo, setAssignedTo] = useState<number | null>(null)
-  const [frequency, setFrequency] = useState<BuilderFrequency>('DAILY')
+  const [frequency, setFrequency] = useState<BuilderFrequency>(initialFrequency)
   const [time, setTime] = useState('12:00')
   const [specificDate, setSpecificDate] = useState(todayValue())
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5])
@@ -167,6 +169,7 @@ export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate,
   const [equipment, setEquipment] = useState('')
   const [requiresNote, setRequiresNote] = useState(false)
   const [requiresPhoto, setRequiresPhoto] = useState(false)
+  const [isQuickAction, setIsQuickAction] = useState(false)
   const [organizationTemplates, setOrganizationTemplates] = useState<OrganizationTaskTemplate[]>([])
   const [patientTaskTitles, setPatientTaskTitles] = useState<string[]>(existingTitles)
   const [assignments, setAssignments] = useState<CareAssignment[]>([])
@@ -292,6 +295,7 @@ export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate,
       equipment: equipment.split(',').map((item) => item.trim()).filter(Boolean),
       requires_note: requiresNote,
       requires_photo: requiresPhoto,
+      is_quick_action: isQuickAction,
       schedule,
     })
     localStorage.removeItem(draftKey)
@@ -320,6 +324,7 @@ export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate,
         <h3 id="builder-schedule-heading"><CalendarDays /> {fa ? 'زمان‌بندی' : 'Schedule'}</h3>
         <div className="frequency-options" role="radiogroup" aria-label={fa ? 'الگوی تکرار' : 'Repeat pattern'}>{([['ONCE', fa ? 'یک‌بار' : 'One time'], ['DAILY', fa ? 'روزانه' : 'Daily'], ['WEEKLY', fa ? 'روزهای هفته' : 'Weekdays'], ['INTERVAL', fa ? 'بازه‌ای' : 'Interval']] as const).map(([value, label]) => <label key={value} className={frequency === value ? 'selected' : ''}><input type="radio" name="frequency" value={value} checked={frequency === value} onChange={() => setFrequency(value)} /><span>{label}</span></label>)}</div>
         <div className="form-row"><label>{frequency === 'INTERVAL' ? (fa ? 'زمان نخست' : 'First time') : (fa ? 'زمان' : 'Time')}<input dir="ltr" type="time" required value={time} onChange={(event) => setTime(event.target.value)} /></label>{frequency === 'ONCE' ? <label>{fa ? 'تاریخ' : 'Date'}<input dir="ltr" type="date" required min={todayValue()} value={specificDate} onChange={(event) => setSpecificDate(event.target.value)} /></label> : frequency === 'INTERVAL' ? <label>{fa ? 'تکرار هر' : 'Repeat every'}<select value={intervalHours} onChange={(event) => setIntervalHours(Number(event.target.value))}>{[1, 2, 3, 4, 6, 8, 12, 24].map((hours) => <option key={hours} value={hours}>{fa ? `${hours} ساعت` : `${hours} hour${hours === 1 ? '' : 's'}`}</option>)}</select></label> : <span />}</div>
+        {frequency === 'ONCE' && <label className="checkbox quick-action-toggle" style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" checked={isQuickAction} onChange={(event) => setIsQuickAction(event.target.checked)} /><span>{fa ? 'ذخیره به عنوان اقدام سریع در صفحه امروز' : 'Save as Pinned Quick Action on Today Dashboard'}</span></label>}
         {frequency === 'WEEKLY' && <fieldset className="weekday-picker"><legend>{fa ? 'روزهای هفته' : 'Days of week'}</legend>{weekdays.map(([value, label]) => <label key={value} className={days.includes(value) ? 'selected' : ''}><input type="checkbox" checked={days.includes(value)} onChange={() => setDays((current) => current.includes(value) ? current.filter((day) => day !== value) : [...current, value])} /><span>{fa ? ['دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه', 'یکشنبه'][value - 1] : label}</span></label>)}</fieldset>}
         {frequency !== 'ONCE' && <div className="form-row"><label>{fa ? 'شروع از' : 'Starts on'}<input dir="ltr" type="date" min={todayValue()} value={startsOn} onChange={(event) => setStartsOn(event.target.value)} /></label><label>{fa ? 'پایان در' : 'Ends on'} <small>{fa ? '(اختیاری)' : '(optional)'}</small><input dir="ltr" type="date" min={startsOn || todayValue()} value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></label></div>}
         <fieldset className="window-fields"><legend>{fa ? 'بازه ایمن ثبت انجام' : 'Safe completion window'}</legend><div className="form-row"><label>{fa ? 'دقیقه پیش از موعد' : 'Minutes before'}<input type="number" min="0" max="1440" value={windowBefore} onChange={(event) => setWindowBefore(Number(event.target.value))} /></label><label>{fa ? 'دقیقه پس از موعد' : 'Minutes after'}<input type="number" min="0" max="1440" value={windowAfter} onChange={(event) => setWindowAfter(Number(event.target.value))} /></label></div><FieldHint>{fa ? 'پس از این بازه، Haven می‌تواند وظیفه را عقب‌افتاده کرده و سیاست تشدید سازمان را اجرا کند.' : 'After this window, Haven can mark the task overdue and follow the organization’s escalation policy.'}</FieldHint></fieldset>
@@ -341,7 +346,7 @@ export function TaskBuilder({ patient, token, existingTitles, onClose, onCreate,
         <h3 id="builder-review-heading"><Sparkles /> {fa ? 'بازبینی پیش از ایجاد' : 'Review before creating'}</h3>
         {duplicate && <div className="builder-warning"><AlertCircle /><span><strong>{fa ? 'تکراری احتمالی' : 'Possible duplicate'}</strong><small>{fa ? `وظیفه‌ای با نام «${title}» از قبل در برنامه امروز وجود دارد.` : `A task named “${title}” already appears in today’s plan.`}</small></span></div>}
         <div className="review-patient"><span className="avatar"><UserRound /></span><span><small>{fa ? 'بیمار' : 'PATIENT'}</small><strong>{patient.full_name}</strong><b>{patient.room ? (fa ? `اتاق ${patient.room}` : `Room ${patient.room}`) : (fa ? 'اتاق ثبت نشده است' : 'No room recorded')}</b></span></div>
-        <dl className="review-grid"><div><dt>{fa ? 'وظیفه' : 'Task'}</dt><dd>{title}</dd></div><div><dt>{fa ? 'اولویت' : 'Priority'}</dt><dd><span className={`priority-badge ${priority.toLocaleLowerCase()}`}>{fa ? ({ LOW: 'کم', NORMAL: 'معمولی', HIGH: 'زیاد', URGENT: 'فوری' }[priority]) : priority.toLocaleLowerCase()}</span></dd></div><div><dt>{fa ? 'دسته‌بندی' : 'Category'}</dt><dd>{fa ? ({ PERSONAL_CARE: 'مراقبت شخصی', HEALTH: 'بررسی سلامت', MEAL: 'وعده غذایی', ACTIVITY: 'فعالیت', MEDICATION: 'پشتیبانی دارو', OTHER: 'سایر' }[category]) : category.replace('_', ' ').toLocaleLowerCase()}</dd></div><div><dt>{fa ? 'مسئول' : 'Assigned to'}</dt><dd>{assigned?.user_detail.display_name || (fa ? 'تیم مراقبت · بدون مسئول' : 'Care team · unassigned')}</dd></div><div><dt>{fa ? 'یادداشت انجام' : 'Completion note'}</dt><dd>{requiresNote ? (fa ? 'الزامی' : 'Required') : (fa ? 'اختیاری' : 'Optional')}</dd></div><div><dt>{fa ? 'عکس انجام' : 'Completion photo'}</dt><dd>{requiresPhoto ? (fa ? 'الزامی' : 'Required') : (fa ? 'اختیاری' : 'Optional')}</dd></div><div className="wide"><dt>{fa ? 'زمان‌بندی' : 'Schedule'}</dt><dd>{scheduleSummary(schedule, fa ? 'fa' : 'en')}</dd></div><div className="wide"><dt>{fa ? 'دستورها' : 'Instructions'}</dt><dd>{instructions}</dd></div></dl>
+        <dl className="review-grid"><div><dt>{fa ? 'وظیفه' : 'Task'}</dt><dd>{title}</dd></div><div><dt>{fa ? 'اولویت' : 'Priority'}</dt><dd><span className={`priority-badge ${priority.toLocaleLowerCase()}`}>{fa ? ({ LOW: 'کم', NORMAL: 'معمولی', HIGH: 'زیاد', URGENT: 'فوری' }[priority]) : priority.toLocaleLowerCase()}</span></dd></div><div><dt>{fa ? 'دسته‌بندی' : 'Category'}</dt><dd>{fa ? ({ PERSONAL_CARE: 'مراقبت شخصی', HEALTH: 'بررسی سلامت', MEAL: 'وعده غذایی', ACTIVITY: 'فعالیت', MEDICATION: 'پشتیبانی دارو', OTHER: 'سایر' }[category]) : category.replace('_', ' ').toLocaleLowerCase()}</dd></div><div><dt>{fa ? 'مسئول' : 'Assigned to'}</dt><dd>{assigned?.user_detail.display_name || (fa ? 'تیم مراقبت · بدون مسئول' : 'Care team · unassigned')}</dd></div><div><dt>{fa ? 'یادداشت انجام' : 'Completion note'}</dt><dd>{requiresNote ? (fa ? 'الزامی' : 'Required') : (fa ? 'اختیاری' : 'Optional')}</dd></div><div><dt>{fa ? 'عکس انجام' : 'Completion photo'}</dt><dd>{requiresPhoto ? (fa ? 'الزامی' : 'Required') : (fa ? 'اختیاری' : 'Optional')}</dd></div>{isQuickAction && <div><dt>{fa ? 'اقدام سریع' : 'Quick action'}</dt><dd>{fa ? 'سنجاق در صفحه امروز' : 'Pinned on Today Dashboard'}</dd></div>}<div className="wide"><dt>{fa ? 'زمان‌بندی' : 'Schedule'}</dt><dd>{scheduleSummary(schedule, fa ? 'fa' : 'en')}</dd></div><div className="wide"><dt>{fa ? 'دستورها' : 'Instructions'}</dt><dd>{instructions}</dd></div></dl>
         <div className="occurrence-preview"><strong>{fa ? 'دفعات بعدی' : 'Next occurrences'}</strong>{preview.length ? <ol>{preview.map((date) => <li key={date.toISOString()}><CalendarDays /><span>{new Intl.DateTimeFormat(fa ? 'fa-IR-u-ca-persian' : undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)}</span></li>)}</ol> : <p>{fa ? 'در تاریخ‌های انتخاب‌شده رویدادی وجود ندارد.' : 'No occurrences fall within the selected dates.'}</p>}</div>
         <label className="verification-check"><input type="checkbox" checked={patientConfirmed} onChange={(event) => setPatientConfirmed(event.target.checked)} /><span>{fa ? <>تأیید می‌کنم این وظیفه برای <strong>{patient.full_name}</strong> است و زمان‌بندی و دستورها درست هستند.</> : <>I confirm this task is for <strong>{patient.full_name}</strong> and the schedule and instructions are correct.</>}</span></label>
       </section>}

@@ -1,4 +1,4 @@
-import type { DashboardResponse, Patient } from './types'
+import type { AdHocQuickTemplate, DashboardResponse, Patient } from './types'
 
 const DB_NAME = 'haven-care'
 const DB_VERSION = 2
@@ -154,3 +154,25 @@ export async function retryMutation(id: string) {
   mutation.serverState = undefined
   await updateMutation(mutation)
 }
+
+export async function cacheQuickTemplates(templates: AdHocQuickTemplate[], userId: number, patientId?: number) {
+  const database = await openDatabase()
+  const transaction = database.transaction(CACHE, 'readwrite')
+  const key = patientId ? `quick_templates:${userId}:${patientId}` : `quick_templates:${userId}`
+  await requestResult(transaction.objectStore(CACHE).put({ userId, patientId, cachedAt: new Date().toISOString(), templates }, key))
+  database.close()
+}
+
+export async function readCachedQuickTemplates(userId: number, patientId?: number): Promise<AdHocQuickTemplate[]> {
+  const database = await openDatabase()
+  const transaction = database.transaction(CACHE, 'readonly')
+  const store = transaction.objectStore(CACHE)
+  const key = patientId ? `quick_templates:${userId}:${patientId}` : `quick_templates:${userId}`
+  const cached = await requestResult(store.get(key))
+  database.close()
+  if (!cached || typeof cached !== 'object') return []
+  const record = cached as { userId?: number; cachedAt?: string; templates?: AdHocQuickTemplate[] }
+  if (!record.cachedAt || Date.now() - new Date(record.cachedAt).getTime() > CACHE_TTL_MS) return []
+  return record.userId === userId ? record.templates || [] : []
+}
+

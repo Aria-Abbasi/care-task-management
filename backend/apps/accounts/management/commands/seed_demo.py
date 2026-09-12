@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from apps.accounts.models import Organization, User
-from apps.care_tasks.models import Task, TaskOccurrence, TaskSchedule
+from apps.care_tasks.models import AdHocTemplate, Task, TaskOccurrence, TaskSchedule
 from apps.clinical.models import Allergy, CarePlan, Diagnosis, EmergencyContact
 from apps.communications.models import CaregiverAvailability, Conversation, Message, ShiftAssignment
 from apps.health.models import VitalRecord
@@ -278,6 +278,27 @@ class Command(BaseCommand):
                     "secondary_value": secondary,
                     "unit": unit,
                     "recorded_by": caregiver,
+                },
+            )
+
+        quick_templates = [
+            ("Hydration / Drinking Water", Task.Category.HEALTH, "Droplets", "blue", 1, "Offered 200ml water; consumed well."),
+            ("Repositioning", Task.Category.PERSONAL_CARE, "RotateCw", "purple", 2, "Repositioned to reduce pressure; skin intact."),
+            ("Assisted Walk", Task.Category.ACTIVITY, "Footprints", "green", 3, "Assisted walking with mobility aid for 10 minutes."),
+            ("Snack / Nourishment", Task.Category.MEAL, "Utensils", "amber", 4, "Provided light snack and fluids."),
+        ]
+        for title, category, icon, color, sort_order, default_note in quick_templates:
+            AdHocTemplate.objects.get_or_create(
+                organization=organization,
+                title=title,
+                defaults={
+                    "category": category,
+                    "icon": icon,
+                    "color": color,
+                    "sort_order": sort_order,
+                    "default_note": default_note,
+                    "is_quick_action": True,
+                    "active": True,
                 },
             )
 

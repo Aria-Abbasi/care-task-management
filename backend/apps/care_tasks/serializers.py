@@ -1,12 +1,24 @@
+from datetime import datetime, time, timedelta
+
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.common.exceptions import VersionConflict
-from apps.patients.models import CareAssignment
+from apps.common.timezones import patient_timezone
+from apps.patients.models import CareAssignment, Patient
 from apps.safety.services import record_audit, resolve_source_alerts
 
-from .models import CareTaskTemplate, CompletionCorrection, CompletionLog, Task, TaskOccurrence, TaskSchedule
+from .models import (
+    AdHocTemplate,
+    CareTaskTemplate,
+    CompletionCorrection,
+    CompletionLog,
+    Task,
+    TaskOccurrence,
+    TaskSchedule,
+)
 
 
 def occurrence_state(occurrence):
@@ -203,6 +215,69 @@ class CareTaskTemplateSerializer(serializers.ModelSerializer):
         return value
 
 
+class AdHocTemplateSerializer(serializers.ModelSerializer):
+    today_count = serializers.SerializerMethodField()
+    active = serializers.BooleanField(default=True, required=False)
+    is_quick_action = serializers.BooleanField(default=True, required=False)
+
+    class Meta:
+        model = AdHocTemplate
+        fields = [
+            "id",
+            "organization",
+            "patient",
+            "title",
+            "category",
+            "icon",
+            "color",
+            "is_quick_action",
+            "default_note",
+            "sort_order",
+            "active",
+            "client_reference",
+            "today_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "organization", "today_count", "created_at", "updated_at"]
+
+    def get_today_count(self, obj):
+        patient_id = self.context.get("patient_id")
+        if not patient_id:
+            request = self.context.get("request")
+            if request:
+                patient_id = request.query_params.get("patient")
+        if not patient_id:
+            return 0
+        try:
+            patient = Patient.objects.get(pk=patient_id)
+        except (Patient.DoesNotExist, ValueError, TypeError):
+            return 0
+
+        zone = patient_timezone(patient)
+        local_today = timezone.localdate(timezone=zone)
+        day_start = timezone.make_aware(datetime.combine(local_today, time.min), zone)
+        day_end = day_start + timedelta(days=1)
+        return (
+            TaskOccurrence.objects.filter(
+                task__patient=patient,
+                status=TaskOccurrence.Status.DONE,
+                scheduled_at__gte=day_start,
+                scheduled_at__lt=day_end,
+            )
+            .filter(Q(ad_hoc_template=obj) | Q(task__title__iexact=obj.title))
+            .count()
+        )
+
+
+class QuickLogSerializer(serializers.Serializer):
+    template_id = serializers.IntegerField(required=False, allow_null=True)
+    patient_id = serializers.IntegerField(required=True)
+    client_reference = serializers.UUIDField(required=False, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+    performed_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
 class CompletionLogSerializer(serializers.ModelSerializer):
     completed_by_name = serializers.CharField(source="completed_by.display_name", read_only=True)
 
@@ -246,6 +321,7 @@ class TaskOccurrenceSerializer(serializers.ModelSerializer):
             "task",
             "task_detail",
             "schedule",
+            "ad_hoc_template",
             "scheduled_at",
             "effective_scheduled_at",
             "status",

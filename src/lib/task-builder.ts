@@ -15,6 +15,7 @@ export type TaskCreationDraft = {
   equipment: string[]
   requires_note: boolean
   requires_photo: boolean
+  is_quick_action?: boolean
   schedule: {
     frequency: BuilderFrequency
     time: string
