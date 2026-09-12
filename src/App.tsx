@@ -56,6 +56,7 @@ import { TaskBuilder } from './features/TaskBuilder'
 import UnifiedSchedule from './features/UnifiedSchedule'
 import ShiftModeView from './features/ShiftModeView'
 import { SidebarAccountMenu, TopAccountMenu } from './components/AccountMenus'
+import { useDialogFocus } from './components/useDialogFocus'
 import { copy, formatCount } from './lib/i18n'
 import type { TaskCreationDraft } from './lib/task-builder'
 import type {
@@ -1623,23 +1624,7 @@ function TaskRow({ task, onClick }: { task: CareTask; onClick: () => void }) {
 
 export function Modal({ children, onClose, label = 'Care dialog', locale = 'en' }: { children: ReactNode; onClose: () => void; label?: string; locale?: string }) {
   const dialogRef = useRef<HTMLElement>(null)
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null
-    const dialog = dialogRef.current
-    dialog?.focus()
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-      if (event.key !== 'Tab' || !dialog) return
-      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')]
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    document.addEventListener('keydown', keydown)
-    return () => { document.removeEventListener('keydown', keydown); previousFocus?.focus() }
-  }, [onClose])
+  useDialogFocus(dialogRef, onClose)
   const closeLabel = locale === 'fa' ? 'بستن پنجره' : 'Close dialog'
   return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label={closeLabel} tabIndex={-1} /><section className="modal" ref={dialogRef} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}><button className="modal-close" onClick={onClose} aria-label={closeLabel}><X /></button>{children}</section></div>
 }

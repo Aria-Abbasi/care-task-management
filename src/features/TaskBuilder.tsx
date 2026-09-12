@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { getCareAssignments, getTasks, getTaskTemplates } from '../lib/api'
+import { useDialogFocus } from '../components/useDialogFocus'
 import { previewOccurrences, scheduleSummary, todayValue, weekdays, type BuilderFrequency, type TaskCategory, type TaskCreationDraft, type TaskPriority } from '../lib/task-builder'
 import type { CareAssignment, OrganizationTaskTemplate, Patient } from '../lib/types'
 
@@ -112,23 +113,7 @@ const categoryGuidance: Record<TaskCategory, string> = {
 
 function Dialog({ children, onClose, locale }: { children: ReactNode; onClose: () => void; locale: string }) {
   const dialogRef = useRef<HTMLElement>(null)
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null
-    const dialog = dialogRef.current
-    dialog?.focus()
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-      if (event.key !== 'Tab' || !dialog) return
-      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')]
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    document.addEventListener('keydown', keydown)
-    return () => { document.removeEventListener('keydown', keydown); previousFocus?.focus() }
-  }, [onClose])
+  useDialogFocus(dialogRef, onClose)
   const closeLabel = locale === 'fa' ? 'بستن ساخت وظیفه' : 'Close task builder'
   return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label={closeLabel} tabIndex={-1} /><section className="modal task-builder" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-builder-title" tabIndex={-1}><button className="modal-close" onClick={onClose} aria-label={closeLabel}><X /></button>{children}</section></div>
 }
